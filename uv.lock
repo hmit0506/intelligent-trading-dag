@@ -670,7 +670,7 @@ wheels = [
 ]
 
 [[package]]
-name = "intelligent-signal-fusion-system"
+name = "intelligent-trading-dag"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

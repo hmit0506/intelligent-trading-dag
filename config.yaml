@@ -3,7 +3,7 @@
 # See config.example.yaml for detailed explanations
 
 # Trading mode: "backtest" or "live"
-mode: live
+mode: backtest
 
 # Date range for backtesting (only used in backtest mode)
 start_date: 2025-01-01
