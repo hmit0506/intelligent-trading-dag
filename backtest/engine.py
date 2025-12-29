@@ -4,14 +4,14 @@ import sys
 from datetime import datetime
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from colorama import Fore, Style
 import matplotlib.pyplot as plt
 
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from utils.constants import Interval, QUANTITY_DECIMALS
+from utils.constants import Interval, QUANTITY_DECIMALS, RISK_FREE_RATE_ANNUAL
 from utils.helpers import format_backtest_row, print_backtest_results
 from agent import Agent
 from data.provider import BinanceDataProvider
@@ -32,7 +32,10 @@ class Backtester:
             model_base_url: Optional[str] = None,
             initial_margin_requirement: float = 0.0,
             show_agent_graph: bool = False,
-            show_reasoning: bool = False
+            show_reasoning: bool = False,
+            print_frequency: int = 1,
+            use_progress_bar: bool = True,
+            log_file: Optional[str] = None
     ):
         """
         Backtester
@@ -62,9 +65,24 @@ class Backtester:
         self.model_base_url = model_base_url
         self.show_agent_graph = show_agent_graph
         self.show_reasoning = show_reasoning
+        self.print_frequency = print_frequency  # Print every N iterations
+        self.use_progress_bar = use_progress_bar
+        self.log_file = log_file
         self.binance_data_provider = BinanceDataProvider()
-        self.klines: Dict[str, pd.DataFrame]() = {}
+        self.klines: Dict[str, pd.DataFrame] = {}
         self.trade_log: List[Dict[str, Any]] = []  # To store detailed trade and portfolio information
+        
+        # Setup logging if log_file is specified
+        if self.log_file:
+            import logging
+            logging.basicConfig(
+                filename=self.log_file,
+                level=logging.INFO,
+                format='%(asctime)s - %(levelname)s - %(message)s'
+            )
+            self.logger = logging.getLogger(__name__)
+        else:
+            self.logger = None
 
         # Initialize portfolio with support for long/short positions
         self.portfolio_values = []
@@ -333,7 +351,26 @@ class Backtester:
             strategies=self.strategies,
             show_agent_graph=self.show_agent_graph,
         )
+        
+        # Setup progress bar if enabled
+        if self.use_progress_bar:
+            try:
+                from tqdm import tqdm
+                progress_bar = tqdm(
+                    total=len(data_df),
+                    desc="Backtesting",
+                    unit="iter",
+                    ncols=100
+                )
+            except ImportError:
+                print("Warning: tqdm not installed. Progress bar disabled.")
+                progress_bar = None
+        else:
+            progress_bar = None
+        
+        iteration_count = 0
         for row in data_df.itertuples(index=True):
+            iteration_count += 1
 
             index = row.Index
             current_time = row.close_time
@@ -500,12 +537,32 @@ class Backtester:
                 ),
             )
 
-            table_rows.extend(date_rows)
-            print_backtest_results(table_rows)
+            # Print results based on frequency
+            should_print = (iteration_count % self.print_frequency == 0) or (iteration_count == len(data_df))
+            
+            if should_print:
+                table_rows.extend(date_rows)
+                print_backtest_results(table_rows)
+                
+                # Log to file if enabled
+                if self.logger:
+                    self.logger.info(f"Iteration {iteration_count}/{len(data_df)}: Portfolio Value = ${total_value:,.2f}")
+            
+            # Update progress bar
+            if progress_bar:
+                progress_bar.update(1)
+                progress_bar.set_postfix({
+                    'Value': f'${total_value:,.2f}',
+                    'Return': f'{portfolio_return:.2f}%'
+                })
 
             # Update performance metrics if we have enough data
             if len(self.portfolio_values) > 3:
                 self._update_performance_metrics(performance_metrics)
+        
+        # Close progress bar
+        if progress_bar:
+            progress_bar.close()
 
         # Store the final performance metrics for reference in analyze_performance
         self.performance_metrics = performance_metrics
@@ -521,7 +578,7 @@ class Backtester:
             return  # not enough data points
 
         # Assumes 365 trading days/year
-        daily_risk_free_rate = 0.0434 / 365
+        daily_risk_free_rate = RISK_FREE_RATE_ANNUAL / 365
         excess_returns = clean_returns - daily_risk_free_rate
         mean_excess_return = excess_returns.mean()
         std_excess_return = excess_returns.std()
@@ -596,7 +653,7 @@ class Backtester:
 
         # Compute daily returns
         performance_df["Daily Return"] = performance_df["Portfolio Value"].pct_change().fillna(0)
-        daily_rf = 0.0434 / 365  # daily risk-free rate
+        daily_rf = RISK_FREE_RATE_ANNUAL / 365  # daily risk-free rate
         mean_daily_return = performance_df["Daily Return"].mean()
         std_daily_return = performance_df["Daily Return"].std()
 

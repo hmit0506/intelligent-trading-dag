@@ -3,7 +3,7 @@
 # See config.example.yaml for detailed explanations
 
 # Trading mode: "backtest" or "live"
-mode: backtest
+mode: live
 
 # Date range for backtesting (only used in backtest mode)
 start_date: 2025-01-01
@@ -22,6 +22,20 @@ margin_requirement: 0.0
 # Display options
 show_reasoning: false  # Show LLM reasoning process
 show_agent_graph: true  # Generate and save workflow graph
+
+# Performance and output options
+# Backtest mode options
+print_frequency: 1        # Print results every N iterations (default: 1 = every iteration)
+use_progress_bar: true    # Show progress bar during backtest (default: true)
+enable_logging: true      # Generate log files in output/ directory (default: true)
+
+# Live mode options
+save_decision_history: true  # Save decision history to JSON file (default: true)
+
+# File management options
+auto_cleanup_files: false     # Automatically clean up old files (default: false)
+file_retention_days: 30      # Delete files older than N days (default: 30)
+file_keep_latest: 10         # Always keep at least N latest files (default: 10)
 
 # Signal generation configuration
 signals:

@@ -14,6 +14,10 @@
 - **AI增强决策**：使用LLM（OpenAI、Groq、Anthropic、Ollama等）进行复杂的投资组合管理决策
 - **全面回测**：具有详细指标和可视化的历史性能评估
 - **风险管理**：使用固定分数头寸规模方法的内置头寸规模和风险控制
+- **统一运行器**：回测和实盘模式的统一入口，提供一致的接口
+- **进度跟踪**：实时进度条和可配置的输出频率
+- **文件管理**：自动导出结果（CSV/JSON）和内置文件清理工具
+- **增强输出**：详细的投资组合信息、决策历史和性能指标
 
 ## 架构
 
@@ -39,9 +43,14 @@
 ├── indicators/        # 技术指标
 ├── llm/               # LLM集成
 ├── utils/             # 工具和配置
-├── main.py            # 实盘交易入口
-├── backtest.py        # 回测入口
-└── config.yaml        # 配置文件
+│   └── file_manager.py  # 输出文件管理工具
+├── core/              # 核心框架
+│   └── runner.py      # 统一交易系统运行器
+├── main.py            # 统一入口（支持两种模式）
+├── backtest.py        # 回测入口（兼容旧版本，使用统一运行器）
+├── manage_output.py   # 文件管理便捷脚本
+├── config.yaml        # 配置文件
+└── output/            # 输出目录（日志、JSON、CSV文件）
 ```
 
 **注意**：本项目完全独立，不需要原始项目目录。
@@ -65,8 +74,19 @@ cd new_project
 # 如果没有uv，先安装
 curl -fsSL https://install.lunarvim.org/uv.sh | sh
 
+# 创建虚拟环境并安装依赖
+uv sync
+
+# 激活虚拟环境（如需要）
+source .venv/bin/activate  # macOS/Linux
+# 或
+.venv\Scripts\activate  # Windows
+```
+
+或使用标准Python：
+```bash
 # 创建虚拟环境
-uv venv --python 3.12
+python3.12 -m venv .venv
 
 # 激活虚拟环境
 source .venv/bin/activate  # macOS/Linux
@@ -74,7 +94,7 @@ source .venv/bin/activate  # macOS/Linux
 .venv\Scripts\activate  # Windows
 
 # 安装依赖
-uv pip sync
+pip install -r requirements.txt
 ```
 
 3. 配置环境变量：
@@ -142,32 +162,66 @@ model:
 
 ### 快速开始
 
-1. **安装依赖**（如果使用pip而不是uv）：
-```bash
-pip install -r requirements.txt
-```
-
-2. **运行回测**：
-```bash
-uv run backtest.py
-# 或
-python backtest.py
-```
-
-3. **运行实盘模式**（仅生成信号，不执行实际交易）：
+1. **运行系统**（模式由 `config.yaml` 决定）：
 ```bash
 uv run main.py
 # 或
 python main.py
 ```
 
+系统会自动根据 `config.yaml` 检测模式：
+- 如果 `mode: backtest` → 运行回测，显示进度条和详细指标
+- 如果 `mode: live` → 运行实盘模式，显示投资组合和决策历史
+
+2. **运行特定模式**：
+```bash
+# 回测模式
+uv run backtest.py
+# 或
+python backtest.py
+
+# 实盘模式
+uv run main.py  # （在config.yaml中设置 mode: live）
+# 或
+python main.py
+```
+
+### 输出文件
+
+所有输出文件保存在 `output/` 目录：
+- **日志文件** (`.log`)：回测执行日志
+- **JSON文件** (`.json`)：交易日志和决策历史
+- **CSV文件** (`.csv`)：性能数据
+
+管理输出文件：
+```bash
+# 列出所有输出文件
+python manage_output.py list
+
+# 显示摘要
+python manage_output.py summary
+
+# 清理旧文件
+python manage_output.py cleanup
+
+# 详细用法请参阅 FILE_MANAGEMENT.md
+```
+
 ### 回测模式
 
 回测模式将：
 1. 获取指定日期范围的历史数据
-2. 为每个时间段运行DAG工作流
+2. 为每个时间段运行DAG工作流，显示进度条
 3. 根据生成的信号执行模拟交易
 4. 计算并显示性能指标（回报率、夏普比率、索提诺比率、最大回撤）
+5. 自动导出结果到CSV和JSON文件
+6. 生成日志文件用于详细分析
+
+**增强功能**：
+- 显示回测进度的进度条
+- 可配置的打印频率以减少I/O开销
+- 自动导出交易日志和性能数据
+- 生成日志文件用于调试
 
 ### 实盘模式
 
@@ -175,7 +229,13 @@ python main.py
 1. 获取当前市场数据
 2. 运行DAG工作流
 3. 生成交易信号
-4. 显示决策（不执行实际交易）
+4. 显示增强的投资组合信息和决策：
+   - 当前现金余额和保证金使用情况
+   - 投资组合总价值和收益率
+   - 当前持仓（多/空）及市场价格
+   - 交易决策及置信度
+   - 所有策略的分析师信号
+5. 保存决策历史到JSON文件
 
 **注意**：本系统仅生成信号，不执行实际交易。使用风险自负。
 
@@ -230,8 +290,44 @@ class MyStrategy(BaseNode):
 - 夏普比率
 - 索提诺比率
 - 最大回撤
-- 逐笔交易日志
-- 投资组合价值随时间变化
+- 胜率和盈亏比
+- 最大连续盈利/亏损次数
+- 逐笔交易日志（导出为JSON）
+- 投资组合价值随时间变化（导出为CSV）
+- 实时进度跟踪（进度条）
+
+## 文件管理
+
+系统会在 `output/` 目录自动生成输出文件。使用文件管理工具进行清理：
+
+```bash
+# 快速命令
+python manage_output.py list      # 列出所有文件
+python manage_output.py summary  # 显示统计信息
+python manage_output.py cleanup  # 清理旧文件
+
+# 高级用法
+python -m utils.file_manager --help
+```
+
+详细文档请参阅 [FILE_MANAGEMENT.md](FILE_MANAGEMENT.md)。
+
+## 配置选项
+
+`config.yaml` 中的新配置选项：
+
+```yaml
+# 性能和输出选项
+print_frequency: 1        # 每N次迭代打印一次
+use_progress_bar: true    # 显示进度条
+enable_logging: true      # 生成日志文件
+save_decision_history: true  # 保存决策历史
+
+# 文件管理
+auto_cleanup_files: false     # 自动清理旧文件
+file_retention_days: 30      # 删除N天前的文件
+file_keep_latest: 10         # 至少保留N个最新文件
+```
 
 ## 故障排除
 

@@ -21,6 +21,10 @@ NUMERIC_COLUMNS = [
 # Decimal places for quantity display
 QUANTITY_DECIMALS = 3
 
+# Risk-free rate (annual, as decimal) - typically US Treasury rate
+# Default: 4.34% annual rate
+RISK_FREE_RATE_ANNUAL = 0.0434
+
 
 class Interval(Enum):
     """Time interval enumeration for market data."""

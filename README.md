@@ -14,6 +14,10 @@ This system employs LangGraph to create a flexible workflow where market data fl
 - **AI-Enhanced Decision Making**: Uses LLMs (OpenAI, Groq, Anthropic, Ollama, etc.) for sophisticated portfolio management decisions
 - **Comprehensive Backtesting**: Robust historical performance evaluation with detailed metrics and visualizations
 - **Risk Management**: Built-in position sizing and risk controls using Fixed Fractional Position Sizing
+- **Unified Runner**: Single entry point for both backtest and live modes with consistent interface
+- **Progress Tracking**: Real-time progress bars and configurable output frequency for backtests
+- **File Management**: Automatic export of results (CSV/JSON) and built-in file cleanup utilities
+- **Enhanced Output**: Detailed portfolio information, decision history, and performance metrics
 
 ## Architecture
 
@@ -39,9 +43,14 @@ The system uses a DAG workflow with the following nodes:
 ├── indicators/        # Technical indicators
 ├── llm/               # LLM integration
 ├── utils/             # Utilities and configuration
-├── main.py            # Live trading entry point
-├── backtest.py        # Backtest entry point
-└── config.yaml        # Configuration file
+│   └── file_manager.py  # Output file management utilities
+├── core/              # Core framework
+│   └── runner.py      # Unified trading system runner
+├── main.py            # Unified entry point (supports both modes)
+├── backtest.py        # Backtest entry point (legacy, uses unified runner)
+├── manage_output.py   # File management convenience script
+├── config.yaml        # Configuration file
+└── output/            # Output directory (logs, JSON, CSV files)
 ```
 
 **Note**: This project is fully independent and does not require the original project directory.
@@ -65,8 +74,19 @@ cd new_project
 # Install uv if you don't have it
 curl -fsSL https://install.lunarvim.org/uv.sh | sh
 
+# Create virtual environment and install dependencies
+uv sync
+
+# Activate virtual environment (if needed)
+source .venv/bin/activate  # macOS/Linux
+# or
+.venv\Scripts\activate  # Windows
+```
+
+Alternatively, using standard Python:
+```bash
 # Create virtual environment
-uv venv --python 3.12
+python3.12 -m venv .venv
 
 # Activate virtual environment
 source .venv/bin/activate  # macOS/Linux
@@ -74,7 +94,7 @@ source .venv/bin/activate  # macOS/Linux
 .venv\Scripts\activate  # Windows
 
 # Install dependencies
-uv pip sync
+pip install -r requirements.txt
 ```
 
 3. Configure environment variables:
@@ -148,32 +168,66 @@ model:
 
 ### Quick Start
 
-1. **Install dependencies** (if using pip instead of uv):
-```bash
-pip install -r requirements.txt
-```
-
-2. **Run backtest**:
-```bash
-uv run backtest.py
-# or
-python backtest.py
-```
-
-3. **Run live mode** (signal generation only, no actual trading):
+1. **Run backtest** (mode is determined by `config.yaml`):
 ```bash
 uv run main.py
 # or
 python main.py
 ```
 
+The system automatically detects the mode from `config.yaml`:
+- If `mode: backtest` → runs backtest with progress bar and detailed metrics
+- If `mode: live` → runs live mode with portfolio display and decision history
+
+2. **Run specific mode**:
+```bash
+# Backtest mode
+uv run backtest.py
+# or
+python backtest.py
+
+# Live mode
+uv run main.py  # (set mode: live in config.yaml)
+# or
+python main.py
+```
+
+### Output Files
+
+All output files are saved in the `output/` directory:
+- **Log files** (`.log`): Backtest execution logs
+- **JSON files** (`.json`): Trade logs and decision history
+- **CSV files** (`.csv`): Performance data
+
+Manage output files:
+```bash
+# List all output files
+python manage_output.py list
+
+# Show summary
+python manage_output.py summary
+
+# Clean up old files
+python manage_output.py cleanup
+
+# See FILE_MANAGEMENT.md for detailed usage
+```
+
 ### Backtest Mode
 
 Backtest mode will:
 1. Fetch historical data for the specified date range
-2. Run the DAG workflow for each time period
+2. Run the DAG workflow for each time period with progress tracking
 3. Execute simulated trades based on generated signals
 4. Calculate and display performance metrics (returns, Sharpe ratio, Sortino ratio, max drawdown)
+5. Export results to CSV and JSON files automatically
+6. Generate log files for detailed analysis
+
+**Enhanced Features**:
+- Progress bar showing backtest progress
+- Configurable print frequency to reduce I/O overhead
+- Automatic export of trade logs and performance data
+- Log file generation for debugging
 
 ### Live Mode
 
@@ -181,7 +235,13 @@ Live mode will:
 1. Fetch current market data
 2. Run the DAG workflow
 3. Generate trading signals
-4. Display decisions (without executing actual trades)
+4. Display decisions with enhanced portfolio information:
+   - Current cash balance and margin usage
+   - Total portfolio value and return percentage
+   - Current positions (long/short) with market prices
+   - Trading decisions with confidence levels
+   - Analyst signals from all strategies
+5. Save decision history to JSON file
 
 **Note**: This system generates signals but does NOT execute real trades. Use at your own risk.
 
@@ -236,8 +296,44 @@ The backtester provides:
 - Sharpe ratio
 - Sortino ratio
 - Maximum drawdown
-- Trade-by-trade log
-- Portfolio value over time
+- Win rate and win/loss ratio
+- Maximum consecutive wins/losses
+- Trade-by-trade log (exported to JSON)
+- Portfolio value over time (exported to CSV)
+- Real-time progress tracking with progress bar
+
+## File Management
+
+The system automatically generates output files in the `output/` directory. Use the file management utilities to clean up:
+
+```bash
+# Quick commands
+python manage_output.py list      # List all files
+python manage_output.py summary  # Show statistics
+python manage_output.py cleanup  # Clean old files
+
+# Advanced usage
+python -m utils.file_manager --help
+```
+
+See [FILE_MANAGEMENT.md](FILE_MANAGEMENT.md) for detailed documentation.
+
+## Configuration Options
+
+New configuration options in `config.yaml`:
+
+```yaml
+# Performance and output options
+print_frequency: 1        # Print every N iterations
+use_progress_bar: true    # Show progress bar
+enable_logging: true      # Generate log files
+save_decision_history: true  # Save decision history
+
+# File management
+auto_cleanup_files: false     # Auto-cleanup old files
+file_retention_days: 30      # Delete files older than N days
+file_keep_latest: 10         # Keep at least N latest files
+```
 
 ## Troubleshooting
 

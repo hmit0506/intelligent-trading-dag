@@ -22,6 +22,26 @@ margin_requirement: 0.0
 show_reasoning: false  # Show LLM reasoning process
 show_agent_graph: true  # Generate and save workflow graph
 
+# Performance and output options
+# Backtest mode options
+print_frequency: 1        # Print results every N iterations (default: 1 = every iteration)
+                          # Set to higher value (e.g., 10) to reduce I/O overhead for large backtests
+use_progress_bar: true    # Show progress bar during backtest (default: true)
+                          # Requires tqdm package (automatically handles if missing)
+enable_logging: true      # Generate log files in output/ directory (default: true)
+                          # Logs include timestamp, iteration count, and portfolio value
+
+# Live mode options
+save_decision_history: true  # Save decision history to JSON file in output/ directory (default: true)
+                             # Includes timestamp, decisions, signals, and portfolio state
+
+# File management options
+auto_cleanup_files: false     # Automatically clean up old files before each run (default: false)
+file_retention_days: 30      # Delete files older than N days when auto-cleanup is enabled (default: 30)
+file_keep_latest: 10         # Always keep at least N latest files when auto-cleanup is enabled (default: 10)
+                              # Use 'python manage_output.py cleanup' for manual cleanup
+                              # See FILE_MANAGEMENT.md for detailed usage
+
 # Signal generation configuration
 signals:
   # Time intervals to analyze (can use multiple)

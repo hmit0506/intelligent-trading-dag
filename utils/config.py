@@ -2,7 +2,7 @@
 Configuration management.
 """
 from pydantic_settings import BaseSettings
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 from datetime import datetime
 from typing import List, Optional
 import yaml
@@ -30,6 +30,8 @@ class ModelConfig(BaseModel):
 
 class Config(BaseSettings):
     """Main configuration class."""
+    model_config = ConfigDict(extra="allow")  # Allow extra fields for backward compatibility
+    
     mode: str  # "backtest" or "live"
     start_date: datetime
     end_date: datetime
@@ -40,6 +42,19 @@ class Config(BaseSettings):
     show_agent_graph: bool = True
     signals: SignalConfig
     model: ModelConfig
+    
+    # Performance and output options
+    print_frequency: int = 1  # Print results every N iterations
+    use_progress_bar: bool = True  # Show progress bar during backtest
+    enable_logging: bool = True  # Generate log files
+    
+    # Live mode options
+    save_decision_history: bool = True  # Save decision history to JSON file
+    
+    # File management options
+    auto_cleanup_files: bool = False  # Automatically clean up old files
+    file_retention_days: int = 30  # Delete files older than N days
+    file_keep_latest: int = 10  # Always keep at least N latest files
 
     @model_validator(mode='after')
     def validate_primary_interval(self):
