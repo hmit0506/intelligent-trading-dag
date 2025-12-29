@@ -35,7 +35,11 @@ The system uses a DAG workflow with the following nodes:
 ```
 .
 ├── gateway/           # Binance API client (independent)
-├── core/              # Core framework (state, nodes, workflow)
+├── core/              # Core framework (state, nodes, workflow, runner)
+│   ├── node.py        # Base node class
+│   ├── state.py       # Agent state management
+│   ├── workflow.py    # Workflow creation
+│   └── runner.py      # Unified trading system runner
 ├── nodes/             # Workflow nodes
 ├── strategies/        # Trading strategies
 ├── backtest/          # Backtesting engine
@@ -44,8 +48,6 @@ The system uses a DAG workflow with the following nodes:
 ├── llm/               # LLM integration
 ├── utils/             # Utilities and configuration
 │   └── file_manager.py  # Output file management utilities
-├── core/              # Core framework
-│   └── runner.py      # Unified trading system runner
 ├── main.py            # Unified entry point (supports both modes)
 ├── backtest.py        # Backtest entry point (legacy, uses unified runner)
 ├── manage_output.py   # File management convenience script
@@ -66,13 +68,13 @@ The system uses a DAG workflow with the following nodes:
 
 1. Navigate to the project directory:
 ```bash
-cd new_project
+cd intelligent-trading-dag
 ```
 
 2. Set up using uv (recommended):
 ```bash
 # Install uv if you don't have it
-curl -fsSL https://install.lunarvim.org/uv.sh | sh
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Create virtual environment and install dependencies
 uv sync
@@ -123,23 +125,11 @@ cp config.example.yaml config.yaml
 # Edit config.yaml with your settings
 ```
 
+**Note**: Both `config.yaml` and `.env` files are required for the system to function.
+
 ## Configuration
 
 **Configuration is a core component of this project!**
-
-1. **Create config.yaml**:
-```bash
-cp config.example.yaml config.yaml
-# Edit config.yaml with your settings
-```
-
-2. **Create .env file**:
-```bash
-cp env.example .env
-# Edit .env with your API keys
-```
-
-**Note**: Both `config.yaml` and `.env` files are required for the system to function.
 
 Example `config.yaml`:
 
@@ -152,6 +142,18 @@ initial_cash: 100000
 margin_requirement: 0.0
 show_reasoning: false
 show_agent_graph: true
+
+# Performance and output options
+print_frequency: 1        # Print every N iterations
+use_progress_bar: true    # Show progress bar
+enable_logging: true      # Generate log files
+save_decision_history: true  # Save decision history
+
+# File management options
+auto_cleanup_files: false     # Automatically clean up old files
+file_retention_days: 30      # Delete files older than N days
+file_keep_latest: 10         # Always keep at least N latest files
+
 signals:
   intervals: ["1h", "4h"]
   tickers: ["BTCUSDT", "ETHUSDT"]
@@ -302,6 +304,21 @@ The backtester provides:
 - Portfolio value over time (exported to CSV)
 - Real-time progress tracking with progress bar
 
+## Visualizations
+
+### Portfolio Value Chart
+- **When**: Generated automatically after backtest completion
+- **Location**: Saved to `output/backtest_portfolio_value_YYYYMMDD_HHMMSS.png`
+- **Format**: High-resolution PNG (300 DPI)
+- **Content**: Portfolio value over time with grid and labels
+
+### Agent Workflow Graph
+- **When**: Generated when Agent is initialized (if `show_agent_graph: true`)
+- **Location**: Project root directory
+- **Format**: PNG file
+- **Filename**: `{strategy1}_{strategy2}_..._graph.png`
+- **Content**: DAG workflow structure showing nodes and connections
+
 ## File Management
 
 The system automatically generates output files in the `output/` directory. Use the file management utilities to clean up:
@@ -339,7 +356,7 @@ file_keep_latest: 10         # Keep at least N latest files
 
 ### Import Errors
 - Make sure virtual environment is activated
-- Run `uv pip sync` or `pip install -r requirements.txt` to install all dependencies
+- Run `uv sync` or `pip install -r requirements.txt` to install all dependencies
 
 ### API Authentication Errors
 - Check your `.env` file has correct API keys (not placeholder values)

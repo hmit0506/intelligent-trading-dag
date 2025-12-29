@@ -35,7 +35,11 @@
 ```
 .
 ├── gateway/           # 币安API客户端（独立）
-├── core/              # 核心框架（状态、节点、工作流）
+├── core/              # 核心框架（状态、节点、工作流、运行器）
+│   ├── node.py        # 基础节点类
+│   ├── state.py       # Agent状态管理
+│   ├── workflow.py    # 工作流创建
+│   └── runner.py      # 统一交易系统运行器
 ├── nodes/             # 工作流节点
 ├── strategies/        # 交易策略
 ├── backtest/          # 回测引擎
@@ -44,8 +48,6 @@
 ├── llm/               # LLM集成
 ├── utils/             # 工具和配置
 │   └── file_manager.py  # 输出文件管理工具
-├── core/              # 核心框架
-│   └── runner.py      # 统一交易系统运行器
 ├── main.py            # 统一入口（支持两种模式）
 ├── backtest.py        # 回测入口（兼容旧版本，使用统一运行器）
 ├── manage_output.py   # 文件管理便捷脚本
@@ -66,13 +68,13 @@
 
 1. 进入项目目录：
 ```bash
-cd new_project
+cd intelligent-trading-dag
 ```
 
 2. 使用uv设置（推荐）：
 ```bash
 # 如果没有uv，先安装
-curl -fsSL https://install.lunarvim.org/uv.sh | sh
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # 创建虚拟环境并安装依赖
 uv sync
@@ -117,25 +119,17 @@ GROQ_API_KEY=your-groq-key      # 如果使用Groq
 - 获取币安API密钥：https://www.binance.com/en/my/settings/api-management
 - 从你选择的提供商网站获取LLM API密钥
 
-4. 配置系统（核心步骤）：
-
-**配置是项目的核心组件！**
-
+4. 配置系统：
 ```bash
-# 创建config.yaml
 cp config.example.yaml config.yaml
 # 编辑config.yaml设置你的参数
-
-# 创建.env文件
-cp env.example .env
-# 编辑.env填入你的API密钥
 ```
 
 **注意**：`config.yaml` 和 `.env` 文件都是系统运行所必需的。
 
 ## 配置
 
-编辑 `config.yaml`：
+**配置是项目的核心组件！**
 
 ```yaml
 mode: backtest  # 或 "live"
@@ -146,6 +140,18 @@ initial_cash: 100000
 margin_requirement: 0.0
 show_reasoning: false
 show_agent_graph: true
+
+# 性能和输出选项
+print_frequency: 1        # 每N次迭代打印一次
+use_progress_bar: true    # 显示进度条
+enable_logging: true      # 生成日志文件
+save_decision_history: true  # 保存决策历史
+
+# 文件管理选项
+auto_cleanup_files: false     # 自动清理旧文件
+file_retention_days: 30      # 删除N天前的文件
+file_keep_latest: 10         # 至少保留N个最新文件
+
 signals:
   intervals: ["1h", "4h"]
   tickers: ["BTCUSDT", "ETHUSDT"]
@@ -204,7 +210,7 @@ python manage_output.py summary
 # 清理旧文件
 python manage_output.py cleanup
 
-# 详细用法请参阅 FILE_MANAGEMENT.md
+# 详细用法请参阅 [FILE_MANAGEMENT_CN.md](FILE_MANAGEMENT_CN.md)
 ```
 
 ### 回测模式
@@ -296,6 +302,21 @@ class MyStrategy(BaseNode):
 - 投资组合价值随时间变化（导出为CSV）
 - 实时进度跟踪（进度条）
 
+## 可视化
+
+### 投资组合价值图表
+- **生成时机**：回测完成后自动生成
+- **保存位置**：`output/backtest_portfolio_value_YYYYMMDD_HHMMSS.png`
+- **格式**：高分辨率 PNG（300 DPI）
+- **内容**：投资组合价值随时间变化，包含网格和标签
+
+### Agent 工作流图
+- **生成时机**：Agent 初始化时生成（如果 `show_agent_graph: true`）
+- **保存位置**：项目根目录
+- **格式**：PNG 文件
+- **文件名**：`{strategy1}_{strategy2}_..._graph.png`
+- **内容**：DAG 工作流结构，显示节点和连接关系
+
 ## 文件管理
 
 系统会在 `output/` 目录自动生成输出文件。使用文件管理工具进行清理：
@@ -310,7 +331,7 @@ python manage_output.py cleanup  # 清理旧文件
 python -m utils.file_manager --help
 ```
 
-详细文档请参阅 [FILE_MANAGEMENT.md](FILE_MANAGEMENT.md)。
+详细文档请参阅 [FILE_MANAGEMENT_CN.md](FILE_MANAGEMENT_CN.md)。
 
 ## 配置选项
 
@@ -333,7 +354,7 @@ file_keep_latest: 10         # 至少保留N个最新文件
 
 ### 导入错误
 - 确保虚拟环境已激活
-- 运行 `uv pip sync` 或 `pip install -r requirements.txt` 安装所有依赖
+- 运行 `uv sync` 或 `pip install -r requirements.txt` 安装所有依赖
 
 ### API认证错误
 - 检查 `.env` 文件中的API密钥是否正确（不是占位符值）
