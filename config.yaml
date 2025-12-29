@@ -3,15 +3,15 @@
 # See config.example.yaml for detailed explanations
 
 # Trading mode: "backtest" or "live"
-mode: live
+mode: backtest
 
 # Date range for backtesting (only used in backtest mode)
 start_date: 2025-01-01
-end_date: 2025-02-01
+end_date: 2025-01-02
 
 # Primary time interval for decision making
 # Must be one of the intervals listed in signals.intervals
-primary_interval: 1h
+primary_interval: 4h
 
 # Initial capital for trading
 initial_cash: 100000

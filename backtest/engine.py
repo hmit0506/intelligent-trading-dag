@@ -2,6 +2,7 @@ import itertools
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 import pandas as pd
 import numpy as np
 from typing import List, Dict, Optional, Any
@@ -68,6 +69,8 @@ class Backtester:
         self.print_frequency = print_frequency  # Print every N iterations
         self.use_progress_bar = use_progress_bar
         self.log_file = log_file
+        self.output_dir = Path("output")
+        self.output_dir.mkdir(exist_ok=True)
         self.binance_data_provider = BinanceDataProvider()
         self.klines: Dict[str, pd.DataFrame] = {}
         self.trade_log: List[Dict[str, Any]] = []  # To store detailed trade and portfolio information
@@ -644,12 +647,27 @@ class Backtester:
 
         # Plot the portfolio value over time
         plt.figure(figsize=(12, 6))
-        plt.plot(performance_df.index, performance_df["Portfolio Value"], color="blue")
-        plt.title("Portfolio Value Over Time")
-        plt.ylabel("Portfolio Value ($)")
-        plt.xlabel("Date")
-        plt.grid(True)
-        plt.show()
+        plt.plot(performance_df.index, performance_df["Portfolio Value"], color="blue", linewidth=2)
+        plt.title("Portfolio Value Over Time", fontsize=14, fontweight='bold')
+        plt.ylabel("Portfolio Value ($)", fontsize=12)
+        plt.xlabel("Date", fontsize=12)
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        
+        # Save the plot to file
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        plot_path = self.output_dir / f"backtest_portfolio_value_{timestamp}.png"
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        print(f"{Fore.GREEN}Portfolio value chart saved to: {plot_path}{Style.RESET_ALL}")
+        
+        # Optionally show the plot (only if display is available)
+        try:
+            plt.show()
+        except Exception:
+            # If display is not available (e.g., headless server), skip showing
+            pass
+        
+        plt.close()  # Close the figure to free memory
 
         # Compute daily returns
         performance_df["Daily Return"] = performance_df["Portfolio Value"].pct_change().fillna(0)
