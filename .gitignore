@@ -1,0 +1,74 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment variables
+.env
+.env.local
+
+# Cache
+cache/
+*.csv
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+*.png
+graph.png
+*_graph.png
+
+# Cursor IDE (these files ARE tracked and will be pushed - they're useful for team)
+# .cursorignore - IDE ignore patterns (useful for team)
+# .cursorrules - Code style rules (useful for team)
+
+# Lock files (uv.lock IS tracked - it's important for dependency reproducibility)
+# uv.lock - Dependency lock file (should be committed)
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# IDE specific (already covered above, but being explicit)
+.cursor/
+.vscode/
+.idea/
+*.code-workspace
+

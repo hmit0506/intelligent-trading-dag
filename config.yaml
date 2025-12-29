@@ -1,0 +1,52 @@
+# Configuration File
+# This is the main configuration file for the trading system
+# See config.example.yaml for detailed explanations
+
+# Trading mode: "backtest" or "live"
+mode: live
+
+# Date range for backtesting (only used in backtest mode)
+start_date: 2025-01-01
+end_date: 2025-02-01
+
+# Primary time interval for decision making
+# Must be one of the intervals listed in signals.intervals
+primary_interval: 1h
+
+# Initial capital for trading
+initial_cash: 100000
+
+# Margin requirement for short positions (0.0 = no margin)
+margin_requirement: 0.0
+
+# Display options
+show_reasoning: false  # Show LLM reasoning process
+show_agent_graph: true  # Generate and save workflow graph
+
+# Signal generation configuration
+signals:
+  # Time intervals to analyze (can use multiple)
+  intervals: ["1h", "4h"]
+  
+  # Trading pairs to analyze
+  tickers: ["BTCUSDT", "ETHUSDT"]
+  
+  # Trading strategies to use
+  strategies: ['MacdStrategy', 'RSIStrategy', 'BollingerStrategy']
+
+# LLM model configuration
+model:
+  # Model name (varies by provider): "deepseek-chat", "gemini-2.5-flash", "groq/llama-3.1-70b-versatile"
+  name: "deepseek-chat"
+  
+  # LLM provider: "openai", "groq", "openrouter", "gemini", "anthropic", "ollama"
+  provider: "openai"
+  
+  # Base URL for API (optional, uses default if not specified)
+  base_url: "https://api.deepseek.com/v1"
+  
+  # Temperature for model responses (0.0 = deterministic)
+  temperature: 0.0
+  
+  # Response format: "json" or "text"
+  format: "json"
