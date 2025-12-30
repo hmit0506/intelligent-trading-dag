@@ -111,13 +111,13 @@ class MacdStrategy(BaseNode):
 
         message = HumanMessage(
             content=json.dumps(technical_analysis),
-            name="technical_analyst_agent",
+            name="macd_strategy_agent",
         )
 
         if state["metadata"]["show_reasoning"]:
-            show_agent_reasoning(technical_analysis, "Technical Analyst")
+            show_agent_reasoning(technical_analysis, "MACD Strategy")
 
-        data["analyst_signals"]["technical_analyst_agent"] = technical_analysis
+        data["analyst_signals"]["macd_strategy_agent"] = technical_analysis
 
         return {
             "messages": [message],
