@@ -48,7 +48,8 @@ class Agent:
         show_reasoning: bool = False,
         model_name: str = "gpt-4o",
         model_provider: str = "openai",
-        model_base_url: Optional[str] = None
+        model_base_url: Optional[str] = None,
+        future_timepoints: Optional[Dict[str, Dict[str, float]]] = None
     ) -> Dict[str, Any]:
         """
         Execute the trading workflow.
@@ -62,6 +63,7 @@ class Agent:
             model_name: LLM model name
             model_provider: LLM provider
             model_base_url: Optional base URL for LLM
+            future_timepoints: Optional future price projections by interval and ticker
             
         Returns:
             Dictionary with decisions and analyst signals
@@ -79,6 +81,7 @@ class Agent:
                 "portfolio": portfolio,
                 "end_date": end_date,
                 "analyst_signals": {},
+                "future_timepoints": future_timepoints,
             },
             "metadata": {
                 "show_reasoning": show_reasoning,

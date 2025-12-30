@@ -204,56 +204,155 @@ def format_live_results(decisions: Dict[str, Any], analyst_signals: Optional[Dic
         print(f"{Fore.YELLOW}No trading decisions generated.{Style.RESET_ALL}\n")
         return
     
-    # Format decisions table
-    table_rows = []
-    for ticker, decision in decisions.items():
-        action = decision.get("action", "hold").upper()
-        quantity = decision.get("quantity", 0.0)
-        confidence = decision.get("confidence", 0.0)
-        reasoning = decision.get("reasoning", "")
-        
-        # Color code actions
-        action_color = {
-            "BUY": Fore.GREEN,
-            "COVER": Fore.GREEN,
-            "SELL": Fore.RED,
-            "SHORT": Fore.RED,
-            "HOLD": Fore.YELLOW,
-        }.get(action, Fore.WHITE)
-        
-        # Color code confidence
-        if confidence >= 70:
-            conf_color = Fore.GREEN
-        elif confidence >= 40:
-            conf_color = Fore.YELLOW
-        else:
-            conf_color = Fore.RED
-        
-        # Truncate reasoning if too long
-        reasoning_display = reasoning[:80] + "..." if len(reasoning) > 80 else reasoning
-        
-        table_rows.append([
-            f"{Fore.CYAN}{ticker}{Style.RESET_ALL}",
-            f"{action_color}{action}{Style.RESET_ALL}",
-            f"{Fore.WHITE}{quantity:,.4f}{Style.RESET_ALL}",
-            f"{conf_color}{confidence:.1f}%{Style.RESET_ALL}",
-            reasoning_display
-        ])
+    # Check if decisions are structured by timepoints (new format)
+    first_ticker = list(decisions.keys())[0] if decisions else None
+    is_timepoint_format = first_ticker and isinstance(decisions.get(first_ticker), dict) and "now" in decisions.get(first_ticker, {})
     
-    # Print decisions table
-    print(f"{Fore.WHITE}{Style.BRIGHT}TRADING DECISIONS:{Style.RESET_ALL}\n")
-    print(tabulate(
-        table_rows,
-        headers=[
-            f"{Fore.CYAN}Ticker{Style.RESET_ALL}",
-            f"{Fore.WHITE}Action{Style.RESET_ALL}",
-            f"{Fore.WHITE}Quantity{Style.RESET_ALL}",
-            f"{Fore.WHITE}Confidence{Style.RESET_ALL}",
-            f"{Fore.WHITE}Reasoning{Style.RESET_ALL}"
-        ],
-        tablefmt="grid",
-        colalign=("left", "center", "right", "right", "left"),
-    ))
+    if is_timepoint_format:
+        # New format: decisions organized by timepoints
+        timepoints = ["now", "1h", "4h", "1d"]  # Common timepoints, will filter based on what exists
+        
+        # Display decisions for each timepoint
+        for timepoint in timepoints:
+            # Check if this timepoint exists in any ticker's decisions
+            has_timepoint = any(
+                timepoint in decisions.get(ticker, {}) 
+                for ticker in decisions.keys()
+            )
+            
+            if not has_timepoint:
+                continue
+            
+            timepoint_label = "NOW (Current)" if timepoint == "now" else f"{timepoint.upper()} (Future)"
+            print(f"\n{Fore.WHITE}{Style.BRIGHT}TRADING DECISIONS - {timepoint_label}:{Style.RESET_ALL}\n")
+            
+            table_rows = []
+            for ticker, ticker_decisions in decisions.items():
+                if not isinstance(ticker_decisions, dict) or timepoint not in ticker_decisions:
+                    continue
+                
+                decision = ticker_decisions[timepoint]
+                action = decision.get("action", "hold").upper()
+                quantity = decision.get("quantity", 0.0)
+                confidence = decision.get("confidence", 0.0)
+                
+                # Color code actions
+                action_color = {
+                    "BUY": Fore.GREEN,
+                    "COVER": Fore.GREEN,
+                    "SELL": Fore.RED,
+                    "SHORT": Fore.RED,
+                    "HOLD": Fore.YELLOW,
+                }.get(action, Fore.WHITE)
+                
+                # Color code confidence
+                if confidence >= 70:
+                    conf_color = Fore.GREEN
+                elif confidence >= 40:
+                    conf_color = Fore.YELLOW
+                else:
+                    conf_color = Fore.RED
+                
+                table_rows.append([
+                    f"{Fore.CYAN}{ticker}{Style.RESET_ALL}",
+                    f"{action_color}{action}{Style.RESET_ALL}",
+                    f"{Fore.WHITE}{quantity:,.4f}{Style.RESET_ALL}",
+                    f"{conf_color}{confidence:.1f}%{Style.RESET_ALL}",
+                ])
+            
+            if table_rows:
+                print(tabulate(
+                    table_rows,
+                    headers=[
+                        f"{Fore.CYAN}Ticker{Style.RESET_ALL}",
+                        f"{Fore.WHITE}Action{Style.RESET_ALL}",
+                        f"{Fore.WHITE}Quantity{Style.RESET_ALL}",
+                        f"{Fore.WHITE}Confidence{Style.RESET_ALL}",
+                    ],
+                    tablefmt="grid",
+                    colalign=("left", "center", "right", "right"),
+                ))
+        
+        # Display detailed reasoning for each timepoint
+        print(f"\n{Fore.WHITE}{Style.BRIGHT}DETAILED REASONING BY TIMEPOINT:{Style.RESET_ALL}\n")
+        for ticker, ticker_decisions in decisions.items():
+            if not isinstance(ticker_decisions, dict):
+                continue
+                
+            print(f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}{Style.BRIGHT}{ticker}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}{'='*80}{Style.RESET_ALL}\n")
+            
+            for timepoint in timepoints:
+                if timepoint not in ticker_decisions:
+                    continue
+                
+                decision = ticker_decisions[timepoint]
+                reasoning = decision.get("reasoning", "")
+                action = decision.get("action", "hold").upper()
+                confidence = decision.get("confidence", 0.0)
+                
+                timepoint_label = "NOW (Current Timepoint)" if timepoint == "now" else f"{timepoint.upper()} (Future Timepoint)"
+                
+                print(f"{Fore.YELLOW}{Style.BRIGHT}[{timepoint_label}]{Style.RESET_ALL}")
+                print(f"Action: {Fore.GREEN if action in ['BUY', 'COVER'] else Fore.RED if action in ['SELL', 'SHORT'] else Fore.YELLOW}{action}{Style.RESET_ALL} | Confidence: {confidence:.1f}%")
+                print(f"{Fore.WHITE}{reasoning}{Style.RESET_ALL}\n")
+                print("-" * 80 + "\n")
+    else:
+        # Old format: single decision per ticker (backward compatibility)
+        table_rows = []
+        for ticker, decision in decisions.items():
+            action = decision.get("action", "hold").upper()
+            quantity = decision.get("quantity", 0.0)
+            confidence = decision.get("confidence", 0.0)
+            reasoning = decision.get("reasoning", "")
+            
+            # Color code actions
+            action_color = {
+                "BUY": Fore.GREEN,
+                "COVER": Fore.GREEN,
+                "SELL": Fore.RED,
+                "SHORT": Fore.RED,
+                "HOLD": Fore.YELLOW,
+            }.get(action, Fore.WHITE)
+            
+            # Color code confidence
+            if confidence >= 70:
+                conf_color = Fore.GREEN
+            elif confidence >= 40:
+                conf_color = Fore.YELLOW
+            else:
+                conf_color = Fore.RED
+            
+            table_rows.append([
+                f"{Fore.CYAN}{ticker}{Style.RESET_ALL}",
+                f"{action_color}{action}{Style.RESET_ALL}",
+                f"{Fore.WHITE}{quantity:,.4f}{Style.RESET_ALL}",
+                f"{conf_color}{confidence:.1f}%{Style.RESET_ALL}",
+            ])
+        
+        # Print decisions table
+        print(f"{Fore.WHITE}{Style.BRIGHT}TRADING DECISIONS:{Style.RESET_ALL}\n")
+        print(tabulate(
+            table_rows,
+            headers=[
+                f"{Fore.CYAN}Ticker{Style.RESET_ALL}",
+                f"{Fore.WHITE}Action{Style.RESET_ALL}",
+                f"{Fore.WHITE}Quantity{Style.RESET_ALL}",
+                f"{Fore.WHITE}Confidence{Style.RESET_ALL}",
+            ],
+            tablefmt="grid",
+            colalign=("left", "center", "right", "right"),
+        ))
+        
+        # Display full reasoning separately for each ticker
+        print(f"\n{Fore.WHITE}{Style.BRIGHT}DETAILED REASONING:{Style.RESET_ALL}\n")
+        for ticker, decision in decisions.items():
+            reasoning = decision.get("reasoning", "")
+            if reasoning:
+                print(f"{Fore.CYAN}{ticker}{Style.RESET_ALL}:")
+                print(f"{Fore.WHITE}{reasoning}{Style.RESET_ALL}\n")
+                print("-" * 80 + "\n")
     
     # Display analyst signals if available
     if analyst_signals:

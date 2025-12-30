@@ -374,7 +374,7 @@ file_keep_latest: 10         # 至少保留N个最新文件
 MIT许可证
 
 版权所有 (c) 2025 FYP25019 Team  
-版权所有 (c) 2025 qashi (https://github.com/hmit0506)
+版权所有 (c) 2025 Shi Qian (https://github.com/hmit0506)
 
 本项目基于原始作品：
 版权所有 (c) 2025 51bitquant (ai-hedge-fund-crypto)
@@ -383,7 +383,7 @@ MIT许可证
 
 ## 贡献者
 
-- [qashi](https://github.com/hmit0506) - 项目负责人和初始实现
+- [Shi Qian](https://github.com/hmit0506) - 项目负责人和初始实现
 - FYP25019 团队 - 开发团队
 
 ## 致谢

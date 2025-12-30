@@ -13,6 +13,10 @@ from agent import Agent
 from backtest.engine import Backtester
 from utils.helpers import format_live_results
 from utils.file_manager import OutputFileManager
+from utils.constants import Interval
+from data.provider import BinanceDataProvider
+from datetime import timedelta
+import pandas as pd
 
 
 class TradingSystemRunner:
@@ -129,7 +133,10 @@ class TradingSystemRunner:
         """Run live trading mode with enhanced features."""
         agent = self._create_agent()
         
-        # Run agent
+        # Calculate future timepoints based on intervals
+        future_timepoints = self._calculate_future_timepoints()
+        
+        # Run agent with future timepoints data
         result = agent.run(
             primary_interval=self.config.primary_interval,
             tickers=self.config.signals.tickers,
@@ -138,7 +145,8 @@ class TradingSystemRunner:
             show_reasoning=self.config.show_reasoning,
             model_name=self.config.model.name,
             model_provider=self.config.model.provider,
-            model_base_url=self.config.model.base_url
+            model_base_url=self.config.model.base_url,
+            future_timepoints=future_timepoints,
         )
         
         decisions = result.get('decisions', {})
@@ -311,4 +319,93 @@ class TradingSystemRunner:
         total_deleted = sum(results.values())
         if total_deleted > 0:
             print(f"\n{Fore.YELLOW}Auto-cleanup: Deleted {total_deleted} old files{Style.RESET_ALL}")
+    
+    def _calculate_future_timepoints(self) -> Dict[str, Dict[str, float]]:
+        """
+        Calculate future price projections based on intervals configuration.
+        Uses historical patterns and trend analysis to estimate future prices.
+        
+        Returns:
+            Dictionary mapping interval -> ticker -> estimated future price
+        """
+        future_timepoints = {}
+        data_provider = BinanceDataProvider()
+        current_time = datetime.now()
+        
+        # Get intervals from config
+        intervals = self.config.signals.intervals
+        
+        for interval_item in intervals:
+            try:
+                # Handle both Interval enum objects and strings
+                if isinstance(interval_item, Interval):
+                    interval = interval_item
+                    interval_str = interval.value
+                else:
+                    # If it's a string, convert to Interval enum
+                    interval_str = str(interval_item)
+                    interval = Interval.from_string(interval_str)
+                
+                interval_timedelta = interval.to_timedelta()
+                
+                # Calculate future time point (one interval ahead)
+                future_time = current_time + interval_timedelta
+                
+                future_timepoints[interval_str] = {}
+                
+                for ticker in self.config.signals.tickers:
+                    try:
+                        # Get recent historical data to estimate future price
+                        # Use trend analysis: get last few candles and extrapolate
+                        historical_data = data_provider.get_history_klines_with_end_time(
+                            symbol=ticker,
+                            timeframe=interval_str,
+                            end_time=current_time,
+                            limit=20  # Get last 20 candles for trend analysis
+                        )
+                        
+                        if historical_data is not None and not historical_data.empty and len(historical_data) >= 2:
+                            # Simple trend-based projection: use recent momentum
+                            recent_prices = historical_data['close'].tail(5).values
+                            
+                            # Calculate simple moving average trend
+                            if len(recent_prices) >= 2:
+                                # Use linear regression on recent prices
+                                price_change = recent_prices[-1] - recent_prices[0]
+                                avg_change_per_period = price_change / (len(recent_prices) - 1)
+                                
+                                # Project forward one period
+                                current_price = recent_prices[-1]
+                                projected_price = current_price + avg_change_per_period
+                                
+                                # Ensure projected price is positive
+                                projected_price = max(projected_price, current_price * 0.5)  # Don't project below 50% of current
+                                
+                                future_timepoints[interval_str][ticker] = float(projected_price)
+                            else:
+                                # Fallback: use current price
+                                future_timepoints[interval_str][ticker] = float(recent_prices[-1])
+                        else:
+                            # Fallback: try to get current price
+                            latest_data = data_provider.get_history_klines_with_end_time(
+                                symbol=ticker,
+                                timeframe=interval_str,
+                                end_time=current_time,
+                                limit=1
+                            )
+                            if latest_data is not None and not latest_data.empty:
+                                future_timepoints[interval_str][ticker] = float(latest_data.iloc[-1]['close'])
+                            else:
+                                future_timepoints[interval_str][ticker] = 0.0
+                                
+                    except Exception as e:
+                        print(f"Warning: Could not calculate future price for {ticker} at {interval_str}: {e}")
+                        future_timepoints[interval_str][ticker] = 0.0
+                        
+            except (ValueError, AttributeError) as e:
+                interval_repr = str(interval_item) if 'interval_item' in locals() else 'unknown'
+                print(f"Warning: Invalid interval {interval_repr}: {e}")
+                continue
+        
+        return future_timepoints
 

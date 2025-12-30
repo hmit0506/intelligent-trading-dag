@@ -376,7 +376,7 @@ file_keep_latest: 10         # Keep at least N latest files
 MIT License
 
 Copyright (c) 2025 FYP25019 Team  
-Copyright (c) 2025 qashi (https://github.com/hmit0506)
+Copyright (c) 2025 Shi Qian (https://github.com/hmit0506)
 
 This project is based on the original work:
 Copyright (c) 2025 51bitquant (ai-hedge-fund-crypto)
@@ -385,7 +385,7 @@ See [LICENSE](LICENSE) file for full license text and attribution details.
 
 ## Contributors
 
-- [qashi](https://github.com/hmit0506) - Project lead and initial implementation
+- [Shi Qian](https://github.com/hmit0506) - Project lead and initial implementation
 - FYP25019 Team - Development team
 
 ## Acknowledgments

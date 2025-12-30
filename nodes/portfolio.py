@@ -60,6 +60,11 @@ class PortfolioManagementNode(BaseNode):
 
             signals_by_ticker[ticker] = ticker_signals
 
+        # Get future timepoints data if available
+        future_timepoints = data.get("future_timepoints", None)
+        intervals = data.get("intervals", [])
+        interval_strings = [interval.value if hasattr(interval, 'value') else str(interval) for interval in intervals] if intervals else None
+        
         # Generate the trading decision
         result = generate_trading_decision(
             tickers=tickers,
@@ -71,6 +76,8 @@ class PortfolioManagementNode(BaseNode):
             model_name=state["metadata"]["model_name"],
             model_provider=state["metadata"]["model_provider"],
             model_base_url=state["metadata"]["model_base_url"],
+            future_timepoints=future_timepoints,
+            intervals=interval_strings,
         )
 
         message = HumanMessage(
@@ -96,7 +103,9 @@ def generate_trading_decision(
     portfolio: Dict[str, Any],
     model_name: str,
     model_provider: str,
-    model_base_url: Optional[str] = None
+    model_base_url: Optional[str] = None,
+    future_timepoints: Optional[Dict[str, Dict[str, float]]] = None,
+    intervals: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
     Generate trading decisions using LLM.
@@ -111,6 +120,8 @@ def generate_trading_decision(
         model_name: LLM model name
         model_provider: LLM provider
         model_base_url: Optional base URL for LLM
+        future_timepoints: Optional dictionary mapping interval -> ticker -> price for future analysis
+        intervals: Optional list of intervals being analyzed
         
     Returns:
         Dictionary with trading decisions
@@ -138,6 +149,13 @@ def generate_trading_decision(
             - Consider both long and short opportunities based on signals
             - Maintain appropriate risk management with both long and short exposure
             
+            IMPORTANT: You must provide COMPLETE and DETAILED reasoning for each decision. Do not truncate or summarize your reasoning. 
+            Explain your thought process thoroughly, including:
+            - Analysis of current market conditions
+            - Consideration of signals from different strategies
+            - Risk assessment
+            - Expected outcomes and rationale
+            
             Available Actions:
             - "buy": Open or add to long position
             - "sell": Close or reduce long position
@@ -163,8 +181,10 @@ def generate_trading_decision(
             Here are the aggregated signals from various strategies by ticker:
             {signals_by_ticker}
             
-            Current Prices:
+            Current Prices (Now):
             {current_prices}
+            
+            {future_analysis_section}
             
             Maximum Shares Allowed (Overall Limit):
             {max_shares}
@@ -177,31 +197,100 @@ def generate_trading_decision(
             Current Margin Requirement: {margin_requirement}
             Total Margin Used: {total_margin_used}
             
+            CRITICAL INSTRUCTIONS:
+            You MUST provide SEPARATE analysis and trading decisions for EACH timepoint:
+            1. "now" - Current timepoint analysis
+            2. For each future timepoint provided (e.g., "1h", "4h"), provide a separate analysis
+            
+            For EACH timepoint, you need to:
+            - Analyze market conditions at that specific timepoint
+            - Consider the projected price at that timepoint
+            - Make an independent trading decision for that timepoint
+            - Provide complete and detailed reasoning for that timepoint
+            
             Output strictly in JSON with the following structure:
             {{
               "decisions": {{
                 "TICKER1": {{
-                  "action": "buy/sell/short/cover/hold",
-                  "quantity": float,
-                  "confidence": float between 0 and 100,
-                  "reasoning": "string"
+                  "now": {{
+                    "action": "buy/sell/short/cover/hold",
+                    "quantity": float,
+                    "confidence": float between 0 and 100,
+                    "reasoning": "Complete analysis for CURRENT timepoint - explain current market conditions, signal interpretation, risk assessment, and immediate trading rationale."
+                  }},
+                  "<interval1>": {{
+                    "action": "buy/sell/short/cover/hold",
+                    "quantity": float,
+                    "confidence": float between 0 and 100,
+                    "reasoning": "Complete analysis for <interval1> FUTURE timepoint - explain projected market conditions, expected price movement, signal evolution, and trading rationale for this timeframe."
+                  }},
+                  "<interval2>": {{
+                    "action": "buy/sell/short/cover/hold",
+                    "quantity": float,
+                    "confidence": float between 0 and 100,
+                    "reasoning": "Complete analysis for <interval2> FUTURE timepoint - explain projected market conditions, expected price movement, signal evolution, and trading rationale for this timeframe."
+                  }}
                 }},
                 "TICKER2": {{
-                  ...
+                  "now": {{ ... }},
+                  "<interval1>": {{ ... }},
+                  "<interval2>": {{ ... }}
                 }},
                 ...
               }}
             }}
+            
+            IMPORTANT: 
+            - ALWAYS include "now" timepoint for current analysis
+            - Include each future timepoint mentioned in the future_analysis_section (e.g., "1h", "4h", etc.)
+            - Use the EXACT interval string as the key (e.g., "1h", "4h", not "1H" or "1 hour")
+            - Provide a SEPARATE decision and reasoning for EACH timepoint
+            - If a timepoint is not provided in future_analysis_section, omit it from the output
             """,
         ),
     ])
 
+    # Prepare future analysis section
+    future_analysis_section = ""
+    available_timepoints = ["now"]  # Always include "now"
+    
+    if future_timepoints and intervals:
+        # Convert intervals to strings if they are Interval enum objects
+        interval_strings = []
+        for interval_item in intervals:
+            if hasattr(interval_item, 'value'):
+                interval_strings.append(interval_item.value)
+            else:
+                interval_strings.append(str(interval_item))
+        
+        future_analysis_section = "\n=== FUTURE PRICE PROJECTIONS ===\n"
+        future_analysis_section += "You MUST provide SEPARATE analysis for EACH of these timepoints:\n\n"
+        future_analysis_section += "1. NOW (Current timepoint):\n"
+        future_analysis_section += "   Use current prices and signals for immediate trading decisions.\n\n"
+        
+        timepoint_index = 2
+        for interval_str in interval_strings:
+            if interval_str in future_timepoints:
+                available_timepoints.append(interval_str)
+                future_analysis_section += f"{timepoint_index}. {interval_str.upper()} FUTURE TIMEPOINT:\n"
+                for ticker, price in future_timepoints[interval_str].items():
+                    if ticker in tickers:
+                        current_price = current_prices.get(ticker, 0.0)
+                        change_pct = ((price - current_price) / current_price * 100) if current_price > 0 else 0.0
+                        future_analysis_section += f"   {ticker}: Projected price ${price:.2f} ({change_pct:+.2f}% from current ${current_price:.2f})\n"
+                future_analysis_section += f"   Analyze market conditions at this {interval_str} future timepoint and provide a SEPARATE trading decision.\n\n"
+                timepoint_index += 1
+        
+        future_analysis_section += "=== END OF FUTURE PROJECTIONS ===\n"
+        future_analysis_section += "\nREMEMBER: You must provide a SEPARATE decision and reasoning for EACH timepoint (now, 1h, 4h, etc.)\n"
+    
     llm = get_llm(provider=model_provider, model=model_name, base_url=model_base_url)
     chain = prompt | llm | json_parser
     
     result = chain.invoke({
         "signals_by_ticker": json.dumps(signals_by_ticker, indent=2),
         "current_prices": json.dumps(current_prices, indent=2),
+        "future_analysis_section": future_analysis_section,
         "max_shares": json.dumps(max_shares, indent=2),
         "suggested_quantities": json.dumps(suggested_quantities, indent=2),
         "portfolio_cash": f"{portfolio.get('cash', 0.0):.2f}",
