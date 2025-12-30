@@ -1,15 +1,13 @@
 # Configuration Example File
 # Copy this file to config.yaml and modify as needed
 
-# Trading mode: "backtest" or "live"
-mode: backtest
+mode: backtest  # Trading mode: "backtest" or "live"
 
 # Date range for backtesting (only used in backtest mode)
 start_date: 2025-01-01
 end_date: 2025-02-01
 
-# Primary time interval for decision making
-# Must be one of the intervals listed in signals.intervals
+# Primary time interval for decision making (must be in signals.intervals)
 primary_interval: 1h
 
 # Initial capital for trading
@@ -23,60 +21,45 @@ show_reasoning: false  # Show LLM reasoning process
 show_agent_graph: true  # Generate and save workflow graph
 
 # Performance and output options
-# Backtest mode options
-print_frequency: 1        # Print results every N iterations (default: 1 = every iteration)
-                          # Set to higher value (e.g., 10) to reduce I/O overhead for large backtests
-use_progress_bar: true    # Show progress bar during backtest (default: true)
-                          # Requires tqdm package (automatically handles if missing)
-enable_logging: true      # Generate log files in output/ directory (default: true)
-                          # Logs include timestamp, iteration count, and portfolio value
-
-# Live mode options
-save_decision_history: true  # Save decision history to JSON file in output/ directory (default: true)
-                             # Includes timestamp, decisions, signals, and portfolio state
+print_frequency: 1  # Print results every N iterations
+use_progress_bar: true  # Show progress bar during backtest
+enable_logging: true  # Generate log files in output/ directory
+save_decision_history: true  # Save decision history to JSON file
 
 # File management options
-auto_cleanup_files: false     # Automatically clean up old files before each run (default: false)
-file_retention_days: 30      # Delete files older than N days when auto-cleanup is enabled (default: 30)
-file_keep_latest: 10         # Always keep at least N latest files when auto-cleanup is enabled (default: 10)
-                              # Use 'python manage_output.py cleanup' for manual cleanup
-                              # See FILE_MANAGEMENT.md for detailed usage
+auto_cleanup_files: false  # Automatically clean up old files
+file_retention_days: 30  # Delete files older than N days
+file_keep_latest: 10  # Always keep at least N latest files
 
 # Signal generation configuration
 signals:
-  # Time intervals to analyze (can use multiple)
-  intervals: ["1h", "4h"]
-  
-  # Trading pairs to analyze
-  tickers: ["BTCUSDT", "ETHUSDT"]
-  
-  # Trading strategies to use
-  strategies: ['MacdStrategy', 'RSIStrategy', 'BollingerStrategy']
+  intervals: ["1h", "4h"]  # Time intervals to analyze
+  tickers: ["BTCUSDT", "ETHUSDT"]  # Trading pairs to analyze
+  strategies: ['MacdStrategy', 'RSIStrategy', 'BollingerStrategy']  # Trading strategies to use
 
 # LLM model configuration
 model:
-  # Model name (varies by provider)
-  name: "gpt-4o-mini"
-  
-  # LLM provider: "openai", "groq", "openrouter", "gemini", "anthropic", "ollama"
-  provider: "openai"
-  
-  # Base URL for API (optional, uses default if not specified)
-  base_url: null  # or "https://api.openai.com/v1"
-  
-  # Temperature for model responses (0.0 = deterministic)
-  temperature: 0.0
-  
-  # Response format: "json" or "text"
-  format: "json"
+  name: "gpt-4o-mini"  # Model name (varies by provider)
+  provider: "openai"  # LLM provider: "openai", "groq", "openrouter", "gemini", "anthropic", "ollama"
+  base_url: null  # API base URL (optional, uses default if not specified)
+  temperature: 0.0  # Model temperature (0.0 = deterministic)
+  format: "json"  # Response format (only JSON is supported)
 
 # Example configurations for different providers:
+
+# DeepSeek (requires OPENAI_API_KEY, get key from https://platform.deepseek.com/)
+# model:
+#   name: "deepseek-chat"  # or "deepseek-chat-32k"
+#   provider: "openai"
+#   base_url: "https://api.deepseek.com/v1"
+#   temperature: 0.0
+#   format: "json"
 
 # OpenAI
 # model:
 #   name: "gpt-4o-mini"
 #   provider: "openai"
-#   base_url: "https://api.openai.com/v1"
+#   base_url: null
 #   temperature: 0.0
 #   format: "json"
 
@@ -93,14 +76,6 @@ model:
 #   name: "llama3.1:8b"
 #   provider: "ollama"
 #   base_url: "http://localhost:11434"
-#   temperature: 0.0
-#   format: "json"
-
-# DeepSeek (via OpenAI-compatible API)
-# model:
-#   name: "deepseek-chat"
-#   provider: "openai"
-#   base_url: "https://api.deepseek.com/v1"
 #   temperature: 0.0
 #   format: "json"
 

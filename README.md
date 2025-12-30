@@ -116,6 +116,10 @@ GROQ_API_KEY=your-groq-key      # If using Groq
 
 **Important**: 
 - For OpenAI-compatible APIs (like DeepSeek), use `OPENAI_API_KEY` with the appropriate `base_url` in `config.yaml`
+- **DeepSeek Setup**: 
+  - Use `OPENAI_API_KEY` environment variable (get your API key from https://platform.deepseek.com/)
+  - Set `provider: "openai"` and `base_url: "https://api.deepseek.com/v1"` in `config.yaml`
+  - Model name: `"deepseek-chat"` or `"deepseek-chat-32k"`
 - Get Binance API keys from: https://www.binance.com/en/my/settings/api-management
 - Get LLM API keys from your chosen provider's website
 
@@ -164,6 +168,14 @@ model:
   base_url: null
   temperature: 0.0
   format: "json"
+
+# DeepSeek example configuration:
+# model:
+#   name: "deepseek-chat"
+#   provider: "openai"
+#   base_url: "https://api.deepseek.com/v1"
+#   temperature: 0.0
+#   format: "json"
 ```
 
 ## Usage
@@ -285,6 +297,7 @@ class MyStrategy(BaseNode):
 ## Supported LLM Providers
 
 - OpenAI (gpt-4o, gpt-4o-mini, etc.)
+- DeepSeek (via OpenAI-compatible API)
 - Groq
 - OpenRouter
 - Google Gemini

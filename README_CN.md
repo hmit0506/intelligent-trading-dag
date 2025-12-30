@@ -116,6 +116,10 @@ GROQ_API_KEY=your-groq-key      # 如果使用Groq
 
 **重要提示**：
 - 对于OpenAI兼容的API（如DeepSeek），使用 `OPENAI_API_KEY` 并在 `config.yaml` 中设置相应的 `base_url`
+- **DeepSeek 设置**：
+  - 使用 `OPENAI_API_KEY` 环境变量（从 https://platform.deepseek.com/ 获取API密钥）
+  - 在 `config.yaml` 中设置 `provider: "openai"` 和 `base_url: "https://api.deepseek.com/v1"`
+  - 模型名称：`"deepseek-chat"` 或 `"deepseek-chat-32k"`
 - 获取币安API密钥：https://www.binance.com/en/my/settings/api-management
 - 从你选择的提供商网站获取LLM API密钥
 
@@ -162,6 +166,14 @@ model:
   base_url: null
   temperature: 0.0
   format: "json"
+
+# DeepSeek 配置示例：
+# model:
+#   name: "deepseek-chat"
+#   provider: "openai"
+#   base_url: "https://api.deepseek.com/v1"
+#   temperature: 0.0
+#   format: "json"
 ```
 
 ## 使用方法
@@ -283,6 +295,7 @@ class MyStrategy(BaseNode):
 ## 支持的LLM提供商
 
 - OpenAI（gpt-4o、gpt-4o-mini等）
+- DeepSeek（通过OpenAI兼容API）
 - Groq
 - OpenRouter
 - Google Gemini

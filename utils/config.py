@@ -25,7 +25,16 @@ class ModelConfig(BaseModel):
     provider: str
     base_url: Optional[str] = None
     temperature: Optional[float] = 0.0
-    format: Optional[str] = "json"
+    format: Optional[str] = "json"  # Only "json" format is supported
+    
+    @model_validator(mode='after')
+    def validate_format(self):
+        """Ensure format is 'json' (only JSON format is supported)."""
+        if self.format and self.format != "json":
+            raise ValueError(
+                f"format must be 'json' (got '{self.format}'). Only JSON format is supported."
+            )
+        return self
 
 
 class Config(BaseSettings):
