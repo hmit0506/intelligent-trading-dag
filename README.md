@@ -270,14 +270,11 @@ Live mode will:
 2. Fetch current market data
 3. Run the DAG workflow
 4. Generate trading signals
-5. Display decisions with enhanced portfolio information:
-   - Initial portfolio value (baseline for return calculation)
-   - Current cash balance and margin usage
-   - Total portfolio value and return percentage
-   - Current positions (long/short) with market prices and cost basis
-   - Position source indication (initial from config, synced from exchange, or current)
+5. Display current portfolio state and trading decisions:
+   - Current cash balance and positions
+   - Current portfolio value
    - Trading decisions with confidence levels
-   - Analyst signals from all strategies
+   - Detailed analyst signals from all strategies with technical indicators
 6. Save decision history to JSON file
 
 **Portfolio Initialization Options**:

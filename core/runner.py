@@ -403,7 +403,7 @@ class TradingSystemRunner:
         analyst_signals: Dict[str, Any]
     ) -> None:
         """
-        Display live results with enhanced portfolio information.
+        Display live results: current state -> trading decisions -> projected state after execution.
         """
         from colorama import Fore, Style, init
         from tabulate import tabulate
@@ -414,7 +414,6 @@ class TradingSystemRunner:
         # Fetch current prices for portfolio valuation
         data_provider = BinanceDataProvider()
         current_prices = {}
-        portfolio_value = self.portfolio["cash"]
         
         try:
             # Try to get current prices
@@ -436,95 +435,68 @@ class TradingSystemRunner:
         except Exception as e:
             print(f"Warning: Could not fetch current prices: {e}")
         
-        # Calculate portfolio value
+        # ========== STEP 1: Display Current Portfolio State ==========
+        print("\n" + "=" * 80)
+        print(f"{Fore.WHITE}{Style.BRIGHT}CURRENT PORTFOLIO STATE{Style.RESET_ALL}".center(80))
+        print("=" * 80)
+        
+        # Calculate current portfolio value
+        current_portfolio_value = self.portfolio["cash"]
         for ticker in self.config.signals.tickers:
             pos = self.portfolio["positions"][ticker]
             if current_prices.get(ticker) is not None:
                 price = current_prices[ticker]
-                portfolio_value += pos["long"] * price
-                portfolio_value -= pos["short"] * price  # Short positions reduce value
-        
-        # Display portfolio summary
-        print("\n" + "=" * 80)
-        print(f"{Fore.WHITE}{Style.BRIGHT}PORTFOLIO SUMMARY{Style.RESET_ALL}".center(80))
-        print("=" * 80)
-        
-        # Display initial portfolio value if available
-        if self.initial_portfolio_value and self.initial_portfolio_value > 0:
-            print(f"Initial Portfolio Value: {Fore.WHITE}${self.initial_portfolio_value:,.2f}{Style.RESET_ALL}")
-        elif hasattr(self.config, 'initial_cash') and self.config.initial_cash > 0:
-            print(f"Initial Portfolio Value: {Fore.WHITE}${self.config.initial_cash:,.2f}{Style.RESET_ALL} (cash only)")
+                current_portfolio_value += pos["long"] * price
+                current_portfolio_value -= pos["short"] * price
         
         print(f"Cash Balance: {Fore.CYAN}${self.portfolio['cash']:,.2f}{Style.RESET_ALL}")
-        print(f"Margin Used: {Fore.YELLOW}${self.portfolio['margin_used']:,.2f}{Style.RESET_ALL}")
-        print(f"Total Portfolio Value: {Fore.GREEN}${portfolio_value:,.2f}{Style.RESET_ALL}")
         
-        # Calculate return based on initial portfolio value (including initial positions)
-        if self.initial_portfolio_value and self.initial_portfolio_value > 0:
-            total_return = ((portfolio_value - self.initial_portfolio_value) / self.initial_portfolio_value) * 100
-            return_color = Fore.GREEN if total_return >= 0 else Fore.RED
-            print(f"Total Return: {return_color}{total_return:+.2f}%{Style.RESET_ALL}")
-        elif hasattr(self.config, 'initial_cash') and self.config.initial_cash > 0:
-            # Fallback to initial_cash if initial_portfolio_value not calculated
-            total_return = ((portfolio_value - self.config.initial_cash) / self.config.initial_cash) * 100
-            return_color = Fore.GREEN if total_return >= 0 else Fore.RED
-            print(f"Total Return: {return_color}{total_return:+.2f}%{Style.RESET_ALL}")
+        # Display positions if any
+        has_positions = any(
+            self.portfolio["positions"][ticker]["long"] > 0 or 
+            self.portfolio["positions"][ticker]["short"] > 0
+            for ticker in self.config.signals.tickers
+        )
         
-        # Check if positions are from initial configuration
-        has_initial_positions = getattr(self.config, 'initial_positions', None) is not None
-        sync_from_exchange = getattr(self.config, 'sync_from_exchange', False)
-        
-        # Determine position source label
-        if sync_from_exchange:
-            position_label = "POSITIONS (Synced from Exchange)"
-        elif has_initial_positions:
-            position_label = "POSITIONS (Initial from Config)"
+        if has_positions:
+            position_rows = []
+            for ticker in self.config.signals.tickers:
+                pos = self.portfolio["positions"][ticker]
+                if pos["long"] > 0 or pos["short"] > 0:
+                    current_price = current_prices.get(ticker, "N/A")
+                    price_str = f"${current_price:.2f}" if isinstance(current_price, (int, float)) else str(current_price)
+                    
+                    long_value = pos["long"] * current_price if isinstance(current_price, (int, float)) else 0
+                    short_value = pos["short"] * current_price if isinstance(current_price, (int, float)) else 0
+                    
+                    position_rows.append([
+                        f"{Fore.CYAN}{ticker}{Style.RESET_ALL}",
+                        f"{Fore.GREEN}Long: {pos['long']:.4f}{Style.RESET_ALL}" if pos["long"] > 0 else "",
+                        f"{Fore.RED}Short: {pos['short']:.4f}{Style.RESET_ALL}" if pos["short"] > 0 else "",
+                        price_str,
+                        f"${long_value:.2f}" if long_value > 0 else f"-${short_value:.2f}" if short_value > 0 else "$0.00",
+                    ])
+            
+            if position_rows:
+                print(f"\n{Fore.WHITE}{Style.BRIGHT}Current Positions:{Style.RESET_ALL}\n")
+                print(tabulate(
+                    position_rows,
+                    headers=[
+                        f"{Fore.CYAN}Ticker{Style.RESET_ALL}",
+                        f"{Fore.WHITE}Long{Style.RESET_ALL}",
+                        f"{Fore.WHITE}Short{Style.RESET_ALL}",
+                        f"{Fore.WHITE}Price{Style.RESET_ALL}",
+                        f"{Fore.WHITE}Value{Style.RESET_ALL}"
+                    ],
+                    tablefmt="grid",
+                ))
         else:
-            position_label = "CURRENT POSITIONS"
+            print(f"{Fore.YELLOW}No current positions{Style.RESET_ALL}")
         
-        # Display positions
-        position_rows = []
-        for ticker in self.config.signals.tickers:
-            pos = self.portfolio["positions"][ticker]
-            if pos["long"] > 0 or pos["short"] > 0:
-                current_price = current_prices.get(ticker, "N/A")
-                price_str = f"${current_price:.2f}" if isinstance(current_price, (int, float)) else str(current_price)
-                
-                long_value = pos["long"] * current_price if isinstance(current_price, (int, float)) else 0
-                short_value = pos["short"] * current_price if isinstance(current_price, (int, float)) else 0
-                
-                # Add cost basis information for initial positions
-                cost_basis_info = ""
-                if has_initial_positions and pos["long"] > 0 and pos["long_cost_basis"] > 0:
-                    cost_basis_info = f" (Cost: ${pos['long_cost_basis']:.2f})"
-                elif has_initial_positions and pos["short"] > 0 and pos["short_cost_basis"] > 0:
-                    cost_basis_info = f" (Cost: ${pos['short_cost_basis']:.2f})"
-                
-                position_rows.append([
-                    f"{Fore.CYAN}{ticker}{Style.RESET_ALL}",
-                    f"{Fore.GREEN}Long: {pos['long']:.4f}{cost_basis_info}{Style.RESET_ALL}" if pos["long"] > 0 else "",
-                    f"{Fore.RED}Short: {pos['short']:.4f}{cost_basis_info}{Style.RESET_ALL}" if pos["short"] > 0 else "",
-                    price_str,
-                    f"${long_value:.2f}" if long_value > 0 else f"-${short_value:.2f}" if short_value > 0 else "$0.00",
-                ])
-        
-        if position_rows:
-            print(f"\n{Fore.WHITE}{Style.BRIGHT}{position_label}:{Style.RESET_ALL}\n")
-            print(tabulate(
-                position_rows,
-                headers=[
-                    f"{Fore.CYAN}Ticker{Style.RESET_ALL}",
-                    f"{Fore.WHITE}Long{Style.RESET_ALL}",
-                    f"{Fore.WHITE}Short{Style.RESET_ALL}",
-                    f"{Fore.WHITE}Current Price{Style.RESET_ALL}",
-                    f"{Fore.WHITE}Position Value{Style.RESET_ALL}"
-                ],
-                tablefmt="grid",
-            ))
-        
+        print(f"\nCurrent Portfolio Value: {Fore.GREEN}${current_portfolio_value:,.2f}{Style.RESET_ALL}")
         print("\n" + "=" * 80 + "\n")
         
-        # Display trading decisions (using existing format_live_results)
+        # ========== STEP 2: Display Trading Decisions ==========
         format_live_results(decisions, analyst_signals)
     
     def _export_backtest_results(self, backtester: Backtester) -> None:
