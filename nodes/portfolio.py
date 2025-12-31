@@ -198,15 +198,7 @@ def generate_trading_decision(
             Total Margin Used: {total_margin_used}
             
             CRITICAL INSTRUCTIONS:
-            You MUST provide SEPARATE analysis and trading decisions for EACH timepoint:
-            1. "now" - Current timepoint analysis
-            2. For each future timepoint provided (e.g., "1h", "4h"), provide a separate analysis
-            
-            For EACH timepoint, you need to:
-            - Analyze market conditions at that specific timepoint
-            - Consider the projected price at that timepoint
-            - Make an independent trading decision for that timepoint
-            - Provide complete and detailed reasoning for that timepoint
+            {timepoint_instructions}
             
             Output strictly in JSON with the following structure:
             {{
@@ -217,24 +209,10 @@ def generate_trading_decision(
                     "quantity": float,
                     "confidence": float between 0 and 100,
                     "reasoning": "Complete analysis for CURRENT timepoint - explain current market conditions, signal interpretation, risk assessment, and immediate trading rationale."
-                  }},
-                  "<interval1>": {{
-                    "action": "buy/sell/short/cover/hold",
-                    "quantity": float,
-                    "confidence": float between 0 and 100,
-                    "reasoning": "Complete analysis for <interval1> FUTURE timepoint - explain projected market conditions, expected price movement, signal evolution, and trading rationale for this timeframe."
-                  }},
-                  "<interval2>": {{
-                    "action": "buy/sell/short/cover/hold",
-                    "quantity": float,
-                    "confidence": float between 0 and 100,
-                    "reasoning": "Complete analysis for <interval2> FUTURE timepoint - explain projected market conditions, expected price movement, signal evolution, and trading rationale for this timeframe."
-                  }}
+                  }}{future_timepoint_structure}
                 }},
                 "TICKER2": {{
-                  "now": {{ ... }},
-                  "<interval1>": {{ ... }},
-                  "<interval2>": {{ ... }}
+                  "now": {{ ... }}{future_timepoint_structure}
                 }},
                 ...
               }}
@@ -242,15 +220,12 @@ def generate_trading_decision(
             
             IMPORTANT: 
             - ALWAYS include "now" timepoint for current analysis
-            - Include each future timepoint mentioned in the future_analysis_section (e.g., "1h", "4h", etc.)
-            - Use the EXACT interval string as the key (e.g., "1h", "4h", not "1H" or "1 hour")
-            - Provide a SEPARATE decision and reasoning for EACH timepoint
-            - If a timepoint is not provided in future_analysis_section, omit it from the output
+            {future_timepoint_important}
             """,
         ),
     ])
 
-    # Prepare future analysis section
+    # Prepare future analysis section and timepoint instructions
     future_analysis_section = ""
     available_timepoints = ["now"]  # Always include "now"
     
@@ -283,6 +258,50 @@ def generate_trading_decision(
         
         future_analysis_section += "=== END OF FUTURE PROJECTIONS ===\n"
         future_analysis_section += "\nREMEMBER: You must provide a SEPARATE decision and reasoning for EACH timepoint (now, 1h, 4h, etc.)\n"
+        
+        # Instructions for multiple timepoints
+        timepoint_instructions = """You MUST provide SEPARATE analysis and trading decisions for EACH timepoint:
+1. "now" - Current timepoint analysis
+2. For each future timepoint provided (e.g., "1h", "4h"), provide a separate analysis
+
+For EACH timepoint, you need to:
+- Analyze market conditions at that specific timepoint
+- Consider the projected price at that timepoint
+- Make an independent trading decision for that timepoint
+- Provide complete and detailed reasoning for that timepoint"""
+        
+        # Future timepoint structure in JSON
+        future_timepoint_structure = """,
+                  "<interval1>": {{
+                    "action": "buy/sell/short/cover/hold",
+                    "quantity": float,
+                    "confidence": float between 0 and 100,
+                    "reasoning": "Complete analysis for <interval1> FUTURE timepoint - explain projected market conditions, expected price movement, signal evolution, and trading rationale for this timeframe."
+                  }},
+                  "<interval2>": {{
+                    "action": "buy/sell/short/cover/hold",
+                    "quantity": float,
+                    "confidence": float between 0 and 100,
+                    "reasoning": "Complete analysis for <interval2> FUTURE timepoint - explain projected market conditions, expected price movement, signal evolution, and trading rationale for this timeframe."
+                  }}"""
+        
+        future_timepoint_important = """- Include each future timepoint mentioned in the future_analysis_section (e.g., "1h", "4h", etc.)
+            - Use the EXACT interval string as the key (e.g., "1h", "4h", not "1H" or "1 hour")
+            - Provide a SEPARATE decision and reasoning for EACH timepoint
+            - If a timepoint is not provided in future_analysis_section, omit it from the output"""
+    else:
+        # No future timepoints - only analyze current timepoint
+        timepoint_instructions = """You MUST provide analysis and trading decisions for the CURRENT timepoint ("now") only.
+            
+            For the current timepoint, you need to:
+            - Analyze current market conditions
+            - Consider current prices and signals
+            - Make trading decisions based on available information
+            - Provide complete and detailed reasoning"""
+        
+        future_timepoint_structure = ""
+        
+        future_timepoint_important = """- Only provide the "now" timepoint decision (no future timepoints)"""
     
     llm = get_llm(provider=model_provider, model=model_name, base_url=model_base_url)
     chain = prompt | llm | json_parser
@@ -297,6 +316,9 @@ def generate_trading_decision(
         "portfolio_positions": json.dumps(portfolio.get('positions', {}), indent=2),
         "margin_requirement": f"{portfolio.get('margin_requirement', 0.0):.2f}",
         "total_margin_used": f"{portfolio.get('margin_used', 0.0):.2f}",
+        "timepoint_instructions": timepoint_instructions,
+        "future_timepoint_structure": future_timepoint_structure,
+        "future_timepoint_important": future_timepoint_important,
     })
     
     return result

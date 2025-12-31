@@ -13,6 +13,10 @@ This system employs LangGraph to create a flexible workflow where market data fl
 - **Multi-Timeframe Analysis**: Simultaneously analyzes multiple time intervals (1m, 5m, 1h, 4h, etc.) for robust signal generation
 - **AI-Enhanced Decision Making**: Uses LLMs (OpenAI, Groq, Anthropic, Ollama, etc.) for sophisticated portfolio management decisions
 - **Comprehensive Backtesting**: Robust historical performance evaluation with detailed metrics and visualizations
+- **Historical Data Warmup**: Automatically fetches additional historical data before backtest start date to ensure technical indicators work correctly from the first data point
+- **Initial Positions Support**: Both live and backtest modes support starting with existing positions (long/short), not just cash
+- **Exchange Integration**: Live mode can automatically sync portfolio from Binance exchange account
+- **Unified Decision Mechanism**: Live and backtest modes use identical decision-making logic for consistent results (no future price predictions)
 - **Risk Management**: Built-in position sizing and risk controls using Fixed Fractional Position Sizing
 - **Unified Runner**: Single entry point for both backtest and live modes with consistent interface
 - **Progress Tracking**: Real-time progress bars and configurable output frequency for backtests
@@ -158,6 +162,23 @@ auto_cleanup_files: false     # Automatically clean up old files
 file_retention_days: 30      # Delete files older than N days
 file_keep_latest: 10         # Always keep at least N latest files
 
+# Portfolio initialization (works for both live and backtest modes)
+# Option 1: Sync from exchange (live mode only, requires BINANCE_API_KEY and BINANCE_API_SECRET)
+sync_from_exchange: false  # Set to true to sync portfolio from Binance account
+
+# Option 2: Manual initial positions (works for both live and backtest modes)
+# initial_positions:
+#   cash: 100000  # Optional: override initial_cash
+#   positions:
+#     BTCUSDT:
+#       long: 0.1  # Long position quantity
+#       long_cost_basis: 50000.0  # Average cost per unit (optional, uses start_date price in backtest or current price in live)
+#       short: 0.0  # Short position quantity
+#       short_cost_basis: 0.0  # Average cost per unit for short (optional)
+#     ETHUSDT:
+#       long: 2.0
+#       long_cost_basis: 3000.0
+
 signals:
   intervals: ["1h", "4h"]
   tickers: ["BTCUSDT", "ETHUSDT"]
@@ -230,14 +251,18 @@ python manage_output.py cleanup
 ### Backtest Mode
 
 Backtest mode will:
-1. Fetch historical data for the specified date range
-2. Run the DAG workflow for each time period with progress tracking
-3. Execute simulated trades based on generated signals
-4. Calculate and display performance metrics (returns, Sharpe ratio, Sortino ratio, max drawdown)
-5. Export results to CSV and JSON files automatically
-6. Generate log files for detailed analysis
+1. Initialize portfolio (with initial positions if configured, or cash only)
+2. Fetch historical data for the specified date range (with warmup period for technical indicators)
+3. Run the DAG workflow for each time period with progress tracking
+4. Execute simulated trades based on generated signals
+5. Calculate and display performance metrics (returns, Sharpe ratio, Sortino ratio, max drawdown)
+6. Export results to CSV and JSON files automatically
+7. Generate log files for detailed analysis
 
 **Enhanced Features**:
+- **Historical Data Warmup**: Automatically fetches additional historical data before `start_date` to ensure technical indicators have sufficient data from the first data point
+- **Initial Positions Support**: Can start backtest with existing positions (long/short) configured in `config.yaml`
+- **Accurate Return Calculation**: Calculates returns based on initial portfolio value (including initial positions at cost basis), not just initial cash
 - Progress bar showing backtest progress
 - Configurable print frequency to reduce I/O overhead
 - Automatic export of trade logs and performance data
@@ -246,16 +271,30 @@ Backtest mode will:
 ### Live Mode
 
 Live mode will:
-1. Fetch current market data
-2. Run the DAG workflow
-3. Generate trading signals
-4. Display decisions with enhanced portfolio information:
+1. Initialize portfolio (from exchange sync, manual config, or cash only)
+2. Fetch current market data
+3. Run the DAG workflow
+4. Generate trading signals
+5. Display decisions with enhanced portfolio information:
+   - Initial portfolio value (baseline for return calculation)
    - Current cash balance and margin usage
    - Total portfolio value and return percentage
-   - Current positions (long/short) with market prices
+   - Current positions (long/short) with market prices and cost basis
+   - Position source indication (initial from config, synced from exchange, or current)
    - Trading decisions with confidence levels
    - Analyst signals from all strategies
-5. Save decision history to JSON file
+6. Save decision history to JSON file
+
+**Portfolio Initialization Options**:
+- **Sync from Exchange**: Automatically fetch current balances and positions from Binance (requires API keys)
+- **Manual Configuration**: Specify initial positions in `config.yaml` with cost basis
+- **Cash Only**: Start with initial cash only (default)
+
+**Portfolio Display Features**:
+- Shows initial portfolio value (including initial positions at cost basis)
+- Calculates total return based on initial portfolio value, not just initial cash
+- Displays position source (initial from config, synced from exchange, or current)
+- Shows cost basis for initial positions to track P&L accurately
 
 **Note**: This system generates signals but does NOT execute real trades. Use at your own risk.
 
@@ -346,11 +385,41 @@ python manage_output.py cleanup  # Clean old files
 python -m utils.file_manager --help
 ```
 
-See [FILE_MANAGEMENT.md](FILE_MANAGEMENT.md) for detailed documentation.
+See [FILE_MANAGEMENT.md](FILE_MANAGEMENT.md) for detailed file management documentation.
 
 ## Configuration Options
 
-New configuration options in `config.yaml`:
+### Portfolio Initialization
+
+Both live and backtest modes support initial positions:
+
+```yaml
+# Option 1: Sync from exchange (live mode only)
+sync_from_exchange: true  # Requires BINANCE_API_KEY and BINANCE_API_SECRET
+
+# Option 2: Manual initial positions (both modes)
+initial_positions:
+  cash: 100000  # Optional: override initial_cash
+  positions:
+    BTCUSDT:
+      long: 0.5  # Long position quantity
+      long_cost_basis: 45000.0  # Average cost (optional)
+      short: 0.0  # Short position quantity
+      short_cost_basis: 0.0  # Average cost for short (optional)
+```
+
+**For Backtest Mode**:
+- If `long_cost_basis` or `short_cost_basis` is not specified, uses price at `start_date`
+- Allows testing strategies with existing positions
+- Return calculation uses initial portfolio value (cash + positions at cost basis) as baseline
+
+**For Live Mode**:
+- If `sync_from_exchange: true`, automatically fetches current balances and positions
+- If `long_cost_basis` or `short_cost_basis` is not specified, uses current market price
+- Falls back to `initial_positions` if sync fails
+- Return calculation uses initial portfolio value (cash + positions at cost basis) as baseline
+
+### Performance and Output Options
 
 ```yaml
 # Performance and output options
@@ -364,6 +433,46 @@ auto_cleanup_files: false     # Auto-cleanup old files
 file_retention_days: 30      # Delete files older than N days
 file_keep_latest: 10         # Keep at least N latest files
 ```
+
+## Technical Details
+
+### Data Flow and Execution
+
+**Backtest Mode**:
+- Data range is defined by `start_date` and `end_date` in `config.yaml`
+- Automatically fetches additional historical data (126 periods) before `start_date` for technical indicator warmup
+- Each data point triggers a complete workflow execution:
+  1. DataNode fetches historical data up to current timepoint
+  2. All strategies execute in parallel, analyzing all tickers and intervals
+  3. RiskManagementNode calculates position sizing
+  4. PortfolioManagementNode uses LLM to make final decisions
+- Decisions are executed immediately in backtest mode
+
+**Live Mode**:
+- Fetches real-time data on-demand from Binance API
+- Uses identical decision mechanism as backtest (no future price predictions)
+- Only generates decisions (does not execute trades)
+- Can sync portfolio from exchange or use configured initial positions
+
+**Unified Decision Mechanism**:
+- Both modes use the same decision logic based on current signals and prices
+- No future price projections to ensure consistent behavior
+- LLM analyzes current market conditions and generates decisions for "now" timepoint only
+
+### Strategy Execution
+
+Each strategy:
+- Receives historical data sequences (not single data points) for technical indicator calculations
+- Analyzes all configured tickers and intervals in parallel
+- Generates signals with confidence scores (0-100%)
+- Signals are aggregated and used by PortfolioManagementNode for final decisions
+
+### Historical Data Warmup
+
+The system automatically fetches 126 periods of historical data before `start_date` to ensure:
+- Technical indicators (RSI, EMA, MACD, Bollinger Bands, etc.) have sufficient data from the first data point
+- Strategies can calculate accurate signals from the start of backtest
+- No NaN values or default signals due to insufficient data
 
 ## Troubleshooting
 
@@ -383,6 +492,11 @@ file_keep_latest: 10         # Keep at least N latest files
 ### Configuration Errors
 - Ensure `primary_interval` is listed in `signals.intervals`
 - Both `config.yaml` and `.env` files must exist and be properly configured
+
+### Data Issues
+- If backtest shows insufficient data, check that `start_date` and `end_date` are valid
+- Historical data warmup automatically fetches additional data, but ensure Binance API is accessible
+- For live mode, ensure API keys have read permissions for account balance sync
 
 ## License
 

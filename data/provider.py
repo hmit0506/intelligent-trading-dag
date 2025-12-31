@@ -52,9 +52,13 @@ class BinanceDataProvider:
 
         if use_cache and cache_file.exists():
             print(f"Loading cached data for {formatted_symbol} {timeframe}")
-            return pd.read_csv(cache_file, parse_dates=['open_time', 'close_time'])
+            cached_df = pd.read_csv(cache_file, parse_dates=['open_time', 'close_time'])
+            return cached_df[
+                (cached_df['open_time'] >= start_date) & 
+                (cached_df['open_time'] <= end_date)
+            ].reset_index(drop=True)
 
-        print(f"Fetching historical data for {formatted_symbol} {timeframe}")
+        print(f"Fetching historical data from Binance API for {formatted_symbol} {timeframe}")
 
         start_ts = int(start_date.timestamp() * 1000)
         end_ts = int(end_date.timestamp() * 1000)
@@ -67,13 +71,20 @@ class BinanceDataProvider:
                 end_str=end_ts
             )
 
+            if not klines:
+                print(f"Warning: No klines returned for {formatted_symbol} {timeframe}")
+                return pd.DataFrame()
+
             df = pd.DataFrame(klines, columns=COLUMNS)
             for col in NUMERIC_COLUMNS:
-                df[col] = pd.to_numeric(df[col])
+                df[col] = pd.to_numeric(df[col], errors='coerce')
 
             df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
             df['close_time'] = pd.to_datetime(df['close_time'], unit='ms')
+            df = df.dropna(subset=['open_time', 'close_time', 'close', 'open', 'high', 'low']).reset_index(drop=True)
+            df = df[(df['open_time'] >= start_date) & (df['open_time'] <= end_date)].reset_index(drop=True)
 
+            # Only save to cache if explicitly enabled
             if use_cache:
                 df.to_csv(cache_file, index=False)
 
@@ -90,28 +101,44 @@ class BinanceDataProvider:
         end_time: datetime,
         limit: int = 500,
     ) -> pd.DataFrame:
-        """Get historical klines with end time."""
+        """Get historical klines with end time. Always fetches fresh data from API."""
         formatted_symbol = symbol.replace("/", "")
+        
         try:
-            klines = self.client.futures_historical_klines_with_end_time(
+            from utils.constants import Interval
+            try:
+                interval_delta = Interval.from_string(timeframe).to_timedelta()
+            except:
+                interval_delta = pd.Timedelta(hours=1)
+            
+            start_time = end_time - (interval_delta * limit)
+            start_ts = int(start_time.timestamp() * 1000)
+            end_ts = int(end_time.timestamp() * 1000)
+            
+            klines = self.client.get_historical_klines(
                 symbol=formatted_symbol,
                 interval=self._format_timeframe(timeframe),
-                end_str=end_time.strftime("%Y-%m-%d %H:%M:%S"),
+                start_str=start_ts,
+                end_str=end_ts,
                 limit=limit
             )
 
-            df = pd.DataFrame(klines, columns=COLUMNS)
+            if not klines:
+                return pd.DataFrame()
 
+            df = pd.DataFrame(klines, columns=COLUMNS)
             for col in NUMERIC_COLUMNS:
-                df[col] = pd.to_numeric(df[col])
+                df[col] = pd.to_numeric(df[col], errors='coerce')
 
             df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
             df['close_time'] = pd.to_datetime(df['close_time'], unit='ms')
+            df = df.dropna(subset=['open_time', 'close_time', 'close', 'open', 'high', 'low']).reset_index(drop=True)
+            df = df[df['open_time'] <= end_time].reset_index(drop=True)
 
             return df
 
         except Exception as e:
-            print(f"Error fetching latest data for {formatted_symbol} {timeframe}: {e}")
+            print(f"Error fetching data for {formatted_symbol} {timeframe} at {end_time}: {e}")
             return pd.DataFrame()
 
     def get_latest_data(self, symbol: str, timeframe: str, limit: int = 1000) -> pd.DataFrame:

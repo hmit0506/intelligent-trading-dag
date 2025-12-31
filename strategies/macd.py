@@ -66,6 +66,10 @@ class MacdStrategy(BaseNode):
                 volatility_signals = calculate_volatility_signals(df)
                 stat_arb_signals = calculate_stat_arb_signals(df)
 
+                def safe_round_confidence(conf_value):
+                    """Round confidence value, handling NaN cases."""
+                    return 50 if pd.isna(conf_value) else round(conf_value * 100)
+
                 combined_signal = weighted_signal_combination(
                     {
                         "trend": trend_signals,
@@ -79,31 +83,31 @@ class MacdStrategy(BaseNode):
 
                 technical_analysis[ticker][interval.value] = {
                     "signal": combined_signal["signal"],
-                    "confidence": round(combined_signal["confidence"] * 100),
+                    "confidence": safe_round_confidence(combined_signal["confidence"]),
                     "strategy_signals": {
                         "trend_following": {
                             "signal": trend_signals["signal"],
-                            "confidence": round(trend_signals["confidence"] * 100),
+                            "confidence": safe_round_confidence(trend_signals["confidence"]),
                             "metrics": normalize_pandas(trend_signals["metrics"]),
                         },
                         "mean_reversion": {
                             "signal": mean_reversion_signals["signal"],
-                            "confidence": round(mean_reversion_signals["confidence"] * 100),
+                            "confidence": safe_round_confidence(mean_reversion_signals["confidence"]),
                             "metrics": normalize_pandas(mean_reversion_signals["metrics"]),
                         },
                         "momentum": {
                             "signal": momentum_signals["signal"],
-                            "confidence": round(momentum_signals["confidence"] * 100),
+                            "confidence": safe_round_confidence(momentum_signals["confidence"]),
                             "metrics": normalize_pandas(momentum_signals["metrics"]),
                         },
                         "volatility": {
                             "signal": volatility_signals["signal"],
-                            "confidence": round(volatility_signals["confidence"] * 100),
+                            "confidence": safe_round_confidence(volatility_signals["confidence"]),
                             "metrics": normalize_pandas(volatility_signals["metrics"]),
                         },
                         "statistical_arbitrage": {
                             "signal": stat_arb_signals["signal"],
-                            "confidence": round(stat_arb_signals["confidence"] * 100),
+                            "confidence": safe_round_confidence(stat_arb_signals["confidence"]),
                             "metrics": normalize_pandas(stat_arb_signals["metrics"]),
                         },
                     },
@@ -111,13 +115,13 @@ class MacdStrategy(BaseNode):
 
         message = HumanMessage(
             content=json.dumps(technical_analysis),
-            name="macd_strategy_agent",
+            name="technical_analyst_agent",
         )
 
         if state["metadata"]["show_reasoning"]:
-            show_agent_reasoning(technical_analysis, "MACD Strategy")
+            show_agent_reasoning(technical_analysis, "Technical Analyst")
 
-        data["analyst_signals"]["macd_strategy_agent"] = technical_analysis
+        data["analyst_signals"]["technical_analyst_agent"] = technical_analysis
 
         return {
             "messages": [message],

@@ -20,14 +20,19 @@ def calculate_trend_signals(prices_df):
     medium_trend = ema_21 > ema_55
 
     # Combine signals with confidence weighting
-    trend_strength = adx["adx"].iloc[-1] / 100.0
+    adx_value = adx["adx"].iloc[-1] if not adx.empty else float('nan')
+    trend_strength = adx_value / 100.0 if not pd.isna(adx_value) else 0.5
 
-    if short_trend.iloc[-1] and medium_trend.iloc[-1]:
+    # Check if we have valid trend data
+    if pd.isna(short_trend.iloc[-1]) or pd.isna(medium_trend.iloc[-1]):
+        signal = "neutral"
+        confidence = 0.5
+    elif short_trend.iloc[-1] and medium_trend.iloc[-1]:
         signal = "bullish"
-        confidence = trend_strength
+        confidence = trend_strength if not pd.isna(trend_strength) else 0.5
     elif not short_trend.iloc[-1] and not medium_trend.iloc[-1]:
         signal = "bearish"
-        confidence = trend_strength
+        confidence = trend_strength if not pd.isna(trend_strength) else 0.5
     else:
         signal = "neutral"
         confidence = 0.5
@@ -36,8 +41,8 @@ def calculate_trend_signals(prices_df):
         "signal": signal,
         "confidence": confidence,
         "metrics": {
-            "adx": float(adx["adx"].iloc[-1]),
-            "trend_strength": float(trend_strength),
+            "adx": float(adx_value) if not pd.isna(adx_value) else 0.0,
+            "trend_strength": float(trend_strength) if not pd.isna(trend_strength) else 0.5,
         },
     }
 
@@ -46,10 +51,23 @@ def calculate_mean_reversion_signals(prices_df):
     """
     Mean reversion strategy using statistical measures and Bollinger Bands
     """
-    # Calculate z-score of price relative to moving average
-    ma_50 = prices_df["close"].rolling(window=50).mean()
-    std_50 = prices_df["close"].rolling(window=50).std()
-    z_score = (prices_df["close"] - ma_50) / std_50
+    # Check if we have enough data
+    if len(prices_df) < 50:
+        # Not enough data for 50-period MA, return neutral signal
+        return {
+            "signal": "neutral",
+            "confidence": 0.5,
+            "metrics": {
+                "z_score": 0.0,
+                "price_vs_bb": 0.5,
+                "rsi_14": 50.0,
+                "rsi_28": 50.0,
+            },
+        }
+    
+    ma_50 = prices_df["close"].rolling(window=50, min_periods=1).mean()
+    std_50 = prices_df["close"].rolling(window=50, min_periods=1).std()
+    z_score = (prices_df["close"] - ma_50) / std_50.replace(0, pd.NA)
 
     # Calculate Bollinger Bands
     bb_upper, bb_lower = calculate_bollinger_bands(prices_df)
@@ -58,28 +76,34 @@ def calculate_mean_reversion_signals(prices_df):
     rsi_14 = calculate_rsi(prices_df, 14)
     rsi_28 = calculate_rsi(prices_df, 28)
 
-    # Mean reversion signals
-    price_vs_bb = (prices_df["close"].iloc[-1] - bb_lower.iloc[-1]) / (bb_upper.iloc[-1] - bb_lower.iloc[-1])
-
-    # Combine signals
-    if z_score.iloc[-1] < -2 and price_vs_bb < 0.2:
-        signal = "bullish"
-        confidence = min(abs(z_score.iloc[-1]) / 4, 1.0)
-    elif z_score.iloc[-1] > 2 and price_vs_bb > 0.8:
-        signal = "bearish"
-        confidence = min(abs(z_score.iloc[-1]) / 4, 1.0)
+    z_score_val = z_score.iloc[-1] if not z_score.empty else float('nan')
+    bb_upper_val = bb_upper.iloc[-1] if not bb_upper.empty else float('nan')
+    bb_lower_val = bb_lower.iloc[-1] if not bb_lower.empty else float('nan')
+    rsi_14_val = rsi_14.iloc[-1] if not rsi_14.empty else float('nan')
+    rsi_28_val = rsi_28.iloc[-1] if not rsi_28.empty else float('nan')
+    
+    if pd.isna(bb_upper_val) or pd.isna(bb_lower_val) or (bb_upper_val - bb_lower_val) == 0:
+        price_vs_bb = 0.5
     else:
-        signal = "neutral"
-        confidence = 0.5
+        price_vs_bb = (prices_df["close"].iloc[-1] - bb_lower_val) / (bb_upper_val - bb_lower_val)
+
+    if pd.isna(z_score_val) or pd.isna(price_vs_bb):
+        signal, confidence = "neutral", 0.5
+    elif z_score_val < -2 and price_vs_bb < 0.2:
+        signal, confidence = "bullish", min(abs(z_score_val) / 4, 1.0)
+    elif z_score_val > 2 and price_vs_bb > 0.8:
+        signal, confidence = "bearish", min(abs(z_score_val) / 4, 1.0)
+    else:
+        signal, confidence = "neutral", 0.5
 
     return {
         "signal": signal,
         "confidence": confidence,
         "metrics": {
-            "z_score": float(z_score.iloc[-1]),
+            "z_score": float(z_score_val) if not pd.isna(z_score_val) else 0.0,
             "price_vs_bb": float(price_vs_bb),
-            "rsi_14": float(rsi_14.iloc[-1]),
-            "rsi_28": float(rsi_28.iloc[-1]),
+            "rsi_14": float(rsi_14_val) if not pd.isna(rsi_14_val) else 50.0,
+            "rsi_28": float(rsi_28_val) if not pd.isna(rsi_28_val) else 50.0,
         },
     }
 
@@ -88,43 +112,48 @@ def calculate_momentum_signals(prices_df):
     """
     Multi-factor momentum strategy
     """
-    # Price momentum
+    # Check if we have enough data
+    if len(prices_df) < 21:
+        # Not enough data for momentum calculations, return neutral signal
+        return {
+            "signal": "neutral",
+            "confidence": 0.5,
+            "metrics": {
+                "momentum_1m": 0.0,
+                "momentum_3m": 0.0,
+                "momentum_6m": 0.0,
+                "volume_momentum": 1.0,
+            },
+        }
+    
     returns = prices_df["close"].pct_change()
-    mom_1m = returns.rolling(21).sum()
-    mom_3m = returns.rolling(63).sum()
-    mom_6m = returns.rolling(126).sum()
+    mom_1m = returns.rolling(21, min_periods=1).sum()
+    mom_3m = returns.rolling(63, min_periods=1).sum()
+    mom_6m = returns.rolling(126, min_periods=1).sum()
+    volume_ma = prices_df["volume"].rolling(21, min_periods=1).mean()
+    volume_momentum = prices_df["volume"] / volume_ma.replace(0, pd.NA)
 
-    # Volume momentum
-    volume_ma = prices_df["volume"].rolling(21).mean()
-    volume_momentum = prices_df["volume"] / volume_ma
-
-    # Relative strength
-    # (would compare to market/sector in real implementation)
-
-    # Calculate momentum score
     momentum_score = (0.4 * mom_1m + 0.3 * mom_3m + 0.3 * mom_6m).iloc[-1]
+    volume_momentum_val = volume_momentum.iloc[-1] if not volume_momentum.empty else float('nan')
+    volume_confirmation = not pd.isna(volume_momentum_val) and volume_momentum_val > 1.0
 
-    # Volume confirmation
-    volume_confirmation = volume_momentum.iloc[-1] > 1.0
-
-    if momentum_score > 0.05 and volume_confirmation:
-        signal = "bullish"
-        confidence = min(abs(momentum_score) * 5, 1.0)
+    if pd.isna(momentum_score):
+        signal, confidence = "neutral", 0.5
+    elif momentum_score > 0.05 and volume_confirmation:
+        signal, confidence = "bullish", min(abs(momentum_score) * 5, 1.0)
     elif momentum_score < -0.05 and volume_confirmation:
-        signal = "bearish"
-        confidence = min(abs(momentum_score) * 5, 1.0)
+        signal, confidence = "bearish", min(abs(momentum_score) * 5, 1.0)
     else:
-        signal = "neutral"
-        confidence = 0.5
+        signal, confidence = "neutral", 0.5
 
     return {
         "signal": signal,
         "confidence": confidence,
         "metrics": {
-            "momentum_1m": float(mom_1m.iloc[-1]),
-            "momentum_3m": float(mom_3m.iloc[-1]),
-            "momentum_6m": float(mom_6m.iloc[-1]),
-            "volume_momentum": float(volume_momentum.iloc[-1]),
+            "momentum_1m": float(mom_1m.iloc[-1]) if not pd.isna(mom_1m.iloc[-1]) else 0.0,
+            "momentum_3m": float(mom_3m.iloc[-1]) if not pd.isna(mom_3m.iloc[-1]) else 0.0,
+            "momentum_6m": float(mom_6m.iloc[-1]) if not pd.isna(mom_6m.iloc[-1]) else 0.0,
+            "volume_momentum": float(volume_momentum_val) if not pd.isna(volume_momentum_val) else 1.0,
         },
     }
 
@@ -133,45 +162,49 @@ def calculate_volatility_signals(prices_df):
     """
     Volatility-based trading strategy
     """
-    # Calculate various volatility metrics
+    # Check if we have enough data
+    if len(prices_df) < 21:
+        # Not enough data for volatility calculations, return neutral signal
+        return {
+            "signal": "neutral",
+            "confidence": 0.5,
+            "metrics": {
+                "historical_volatility": 0.0,
+                "volatility_regime": 1.0,
+                "volatility_z_score": 0.0,
+                "atr_ratio": 0.0,
+            },
+        }
+    
     returns = prices_df["close"].pct_change()
-
-    # Historical volatility
-    hist_vol = returns.rolling(21).std() * math.sqrt(365)
-
-    # Volatility regime detection
-    vol_ma = hist_vol.rolling(63).mean()
-    vol_regime = hist_vol / vol_ma
-
-    # Volatility mean reversion
-    vol_z_score = (hist_vol - vol_ma) / hist_vol.rolling(63).std()
-
-    # ATR ratio
+    hist_vol = returns.rolling(21, min_periods=1).std() * math.sqrt(365)
+    vol_ma = hist_vol.rolling(63, min_periods=1).mean()
+    vol_regime = hist_vol / vol_ma.replace(0, pd.NA)
+    vol_std = hist_vol.rolling(63, min_periods=1).std()
+    vol_z_score = (hist_vol - vol_ma) / vol_std.replace(0, pd.NA)
     atr = calculate_atr(prices_df)
     atr_ratio = atr / prices_df["close"]
 
-    # Generate signal based on volatility regime
-    current_vol_regime = vol_regime.iloc[-1]
-    vol_z = vol_z_score.iloc[-1]
+    current_vol_regime = vol_regime.iloc[-1] if not vol_regime.empty else float('nan')
+    vol_z = vol_z_score.iloc[-1] if not vol_z_score.empty else float('nan')
 
-    if current_vol_regime < 0.8 and vol_z < -1:
-        signal = "bullish"  # Low vol regime, potential for expansion
-        confidence = min(abs(vol_z) / 3, 1.0)
+    if pd.isna(current_vol_regime) or pd.isna(vol_z):
+        signal, confidence = "neutral", 0.5
+    elif current_vol_regime < 0.8 and vol_z < -1:
+        signal, confidence = "bullish", min(abs(vol_z) / 3, 1.0)
     elif current_vol_regime > 1.2 and vol_z > 1:
-        signal = "bearish"  # High vol regime, potential for contraction
-        confidence = min(abs(vol_z) / 3, 1.0)
+        signal, confidence = "bearish", min(abs(vol_z) / 3, 1.0)
     else:
-        signal = "neutral"
-        confidence = 0.5
+        signal, confidence = "neutral", 0.5
 
     return {
         "signal": signal,
         "confidence": confidence,
         "metrics": {
-            "historical_volatility": float(hist_vol.iloc[-1]),
-            "volatility_regime": float(current_vol_regime),
-            "volatility_z_score": float(vol_z),
-            "atr_ratio": float(atr_ratio.iloc[-1]),
+            "historical_volatility": float(hist_vol.iloc[-1]) if not pd.isna(hist_vol.iloc[-1]) else 0.0,
+            "volatility_regime": float(current_vol_regime) if not pd.isna(current_vol_regime) else 1.0,
+            "volatility_z_score": float(vol_z) if not pd.isna(vol_z) else 0.0,
+            "atr_ratio": float(atr_ratio.iloc[-1]) if not pd.isna(atr_ratio.iloc[-1]) else 0.0,
         },
     }
 
@@ -180,37 +213,43 @@ def calculate_stat_arb_signals(prices_df):
     """
     Statistical arbitrage signals based on price action analysis
     """
-    # Calculate price distribution statistics
+    # Check if we have enough data
+    if len(prices_df) < 63:
+        # Not enough data for statistical calculations, return neutral signal
+        return {
+            "signal": "neutral",
+            "confidence": 0.5,
+            "metrics": {
+                "hurst_exponent": 0.5,
+                "skewness": 0.0,
+                "kurtosis": 0.0,
+            },
+        }
+    
     returns = prices_df["close"].pct_change()
-
-    # Skewness and kurtosis
-    skew = returns.rolling(63).skew()
-    kurt = returns.rolling(63).kurt()
-
-    # Test for mean reversion using Hurst exponent
+    skew = returns.rolling(63, min_periods=1).skew()
+    kurt = returns.rolling(63, min_periods=1).kurt()
     hurst = calculate_hurst_exponent(prices_df["close"])
 
-    # Correlation analysis
-    # (would include correlation with related securities in real implementation)
+    skew_val = skew.iloc[-1] if not skew.empty else float('nan')
+    kurt_val = kurt.iloc[-1] if not kurt.empty else float('nan')
 
-    # Generate signal based on statistical properties
-    if hurst < 0.4 and skew.iloc[-1] > 1:
-        signal = "bullish"
-        confidence = (0.5 - hurst) * 2
-    elif hurst < 0.4 and skew.iloc[-1] < -1:
-        signal = "bearish"
-        confidence = (0.5 - hurst) * 2
+    if pd.isna(hurst) or pd.isna(skew_val):
+        signal, confidence = "neutral", 0.5
+    elif hurst < 0.4 and skew_val > 1:
+        signal, confidence = "bullish", min((0.5 - hurst) * 2, 1.0)
+    elif hurst < 0.4 and skew_val < -1:
+        signal, confidence = "bearish", min((0.5 - hurst) * 2, 1.0)
     else:
-        signal = "neutral"
-        confidence = 0.5
+        signal, confidence = "neutral", 0.5
 
     return {
         "signal": signal,
         "confidence": confidence,
         "metrics": {
-            "hurst_exponent": float(hurst),
-            "skewness": float(skew.iloc[-1]),
-            "kurtosis": float(kurt.iloc[-1]),
+            "hurst_exponent": float(hurst) if not pd.isna(hurst) else 0.5,
+            "skewness": float(skew_val) if not pd.isna(skew_val) else 0.0,
+            "kurtosis": float(kurt_val) if not pd.isna(kurt_val) else 0.0,
         },
     }
 

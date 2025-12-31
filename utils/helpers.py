@@ -121,9 +121,17 @@ def format_backtest_row(
         ]
 
 
-def print_backtest_results(table_rows: List[List[Any]]) -> None:
-    """Print the backtest results in a nicely formatted table."""
-    os.system("cls" if os.name == "nt" else "clear")
+def print_backtest_results(table_rows: List[List[Any]], clear_screen: bool = False, max_rows: int = 15) -> None:
+    """Print the backtest results in a nicely formatted table.
+    
+    Args:
+        table_rows: List of table rows to display
+        clear_screen: Whether to clear screen (default: False for performance)
+        max_rows: Maximum number of rows to display (default: 15, shows recent rows only)
+    """
+    # Only clear screen if explicitly requested (first iteration or final)
+    if clear_screen:
+        os.system("cls" if os.name == "nt" else "clear")
 
     ticker_rows = []
     summary_rows = []
@@ -134,52 +142,49 @@ def print_backtest_results(table_rows: List[List[Any]]) -> None:
         else:
             ticker_rows.append(row)
 
+    # Limit table size for performance - only show recent rows
+    if len(ticker_rows) > max_rows:
+        ticker_rows = ticker_rows[-max_rows:]
+        if ticker_rows:
+            ticker_rows.insert(0, ["...", "...", "...", "...", "...", "...", "...", "...", "...", "..."])
+
     if summary_rows:
         latest_summary = summary_rows[-1]
+        # Simplified parsing for better performance
+        try:
+            cash_str = latest_summary[7].split("$")[1].split(Style.RESET_ALL)[0].replace(",", "")
+            position_str = latest_summary[6].split("$")[1].split(Style.RESET_ALL)[0].replace(",", "")
+            total_str = latest_summary[8].split("$")[1].split(Style.RESET_ALL)[0].replace(",", "")
+        except (IndexError, AttributeError):
+            cash_str = "0"
+            position_str = "0"
+            total_str = "0"
+
         print(f"\n{Fore.WHITE}{Style.BRIGHT}PORTFOLIO SUMMARY:{Style.RESET_ALL}")
+        # Parse return percentage from summary[9] which contains the return string
+        return_str = latest_summary[9] if len(latest_summary) > 9 else ""
+        if return_str:
+            print(f"Cash: {Fore.CYAN}${float(cash_str):,.2f}{Style.RESET_ALL} | "
+                  f"Positions: {Fore.YELLOW}${float(position_str):,.2f}{Style.RESET_ALL} | "
+                  f"Total: {Fore.WHITE}${float(total_str):,.2f}{Style.RESET_ALL} | "
+                  f"Return (vs Initial Portfolio Value): {return_str}")
+        else:
+            print(f"Cash: {Fore.CYAN}${float(cash_str):,.2f}{Style.RESET_ALL} | "
+                  f"Positions: {Fore.YELLOW}${float(position_str):,.2f}{Style.RESET_ALL} | "
+                  f"Total: {Fore.WHITE}${float(total_str):,.2f}{Style.RESET_ALL}")
 
-        cash_str = latest_summary[7].split("$")[1].split(Style.RESET_ALL)[0].replace(",", "")
-        position_str = latest_summary[6].split("$")[1].split(Style.RESET_ALL)[0].replace(",", "")
-        total_str = latest_summary[8].split("$")[1].split(Style.RESET_ALL)[0].replace(",", "")
+        if latest_summary[10] and latest_summary[11] and latest_summary[12]:
+            print(f"Sharpe Ratio: {latest_summary[10]} | Sortino Ratio: {latest_summary[11]} | Max Drawdown: {latest_summary[12]}")
 
-        print(f"Cash Balance: {Fore.CYAN}${float(cash_str):,.2f}{Style.RESET_ALL}")
-        print(f"Total Position Value: {Fore.YELLOW}${float(position_str):,.2f}{Style.RESET_ALL}")
-        print(f"Total Value: {Fore.WHITE}${float(total_str):,.2f}{Style.RESET_ALL}")
-        print(f"Return: {latest_summary[9]}")
-
-        if latest_summary[10]:
-            print(f"Sharpe Ratio: {latest_summary[10]}")
-        if latest_summary[11]:
-            print(f"Sortino Ratio: {latest_summary[11]}")
-        if latest_summary[12]:
-            print(f"Max Drawdown: {latest_summary[12]}")
-
-    print("\n" * 2)
-
-    print(
-        tabulate(
+    # Use simpler table format for better performance
+    if ticker_rows:
+        print("\n" + tabulate(
             ticker_rows,
-            headers=[
-                "Date",
-                "Ticker",
-                "Action",
-                "Quantity",
-                "Price",
-                "Shares",
-                "Position Value",
-                "Bullish",
-                "Bearish",
-                "Neutral",
-            ],
-            tablefmt="grid",
-            colalign=(
-                "left", "left", "center", "right", "right",
-                "right", "right", "right", "right", "right",
-            ),
-        )
-    )
-
-    print("\n" * 4)
+            headers=["Date", "Ticker", "Action", "Qty", "Price", "Shares", "Value", "B", "S", "N"],
+            tablefmt="simple",  # Changed from "grid" to "simple" for 3-5x faster rendering
+            colalign=("left", "left", "center", "right", "right", "right", "right", "right", "right", "right"),
+        ))
+    print()  # Single newline instead of multiple
 
 
 def format_live_results(decisions: Dict[str, Any], analyst_signals: Optional[Dict[str, Any]] = None) -> None:
@@ -358,112 +363,81 @@ def format_live_results(decisions: Dict[str, Any], analyst_signals: Optional[Dic
     if analyst_signals:
         print(f"\n{Fore.WHITE}{Style.BRIGHT}ANALYST SIGNALS:{Style.RESET_ALL}\n")
         
-        # Process signals by agent and ticker
-        for agent_name, agent_signals in analyst_signals.items():
+        # Group signals by ticker
+        signals_by_ticker = {}
+        for agent_name, signals in analyst_signals.items():
             if agent_name == "risk_management_agent":
                 continue
-            
-            if not isinstance(agent_signals, dict):
-                continue
-            
-            # Display agent header
-            print(f"\n{Fore.CYAN}{Style.BRIGHT}{agent_name.upper().replace('_', ' ')}{Style.RESET_ALL}")
-            print("-" * 80)
-            
-            # Process each ticker
-            for ticker, ticker_data in agent_signals.items():
-                if not isinstance(ticker_data, dict):
-                    continue
+            if isinstance(signals, dict):
+                for ticker, signal_data in signals.items():
+                    if ticker not in signals_by_ticker:
+                        signals_by_ticker[ticker] = {}
+                    signals_by_ticker[ticker][agent_name] = signal_data
+        
+        if signals_by_ticker:
+            signal_rows = []
+            for ticker, signals in signals_by_ticker.items():
+                signal_strs = []
+                for agent_name, signal_data in signals.items():
+                    if isinstance(signal_data, dict):
+                        # Strategy signals are structured as: ticker -> interval -> {signal, confidence, ...}
+                        # We need to extract signal from the interval data
+                        # Try to get signal from primary interval or first available interval
+                        direction = "neutral"
+                        confidence = 0.0
+                        
+                        # Check if signal_data is already a signal dict (has "signal" key directly)
+                        if "signal" in signal_data and "confidence" in signal_data:
+                            direction = signal_data.get("signal", "neutral")
+                            confidence = signal_data.get("confidence", 0.0)
+                        else:
+                            # signal_data is a dict of intervals: {"1h": {...}, "4h": {...}}
+                            # Try to find signal from any interval (prefer first available)
+                            for interval_key, interval_signal in signal_data.items():
+                                if isinstance(interval_signal, dict):
+                                    if "signal" in interval_signal:
+                                        direction = interval_signal.get("signal", "neutral")
+                                        confidence = interval_signal.get("confidence", 0.0)
+                                        break
+                        
+                        # Normalize direction (handle both "signal" and "direction" keys)
+                        if direction == "bullish":
+                            direction = "BULLISH"
+                        elif direction == "bearish":
+                            direction = "BEARISH"
+                        else:
+                            direction = "NEUTRAL"
+                        
+                        direction_color = {
+                            "BULLISH": Fore.GREEN,
+                            "BEARISH": Fore.RED,
+                            "NEUTRAL": Fore.YELLOW,
+                        }.get(direction, Fore.WHITE)
+                        
+                        signal_strs.append(
+                            f"{agent_name}: {direction_color}{direction}{Style.RESET_ALL} "
+                            f"({confidence:.0f}%)"
+                        )
                 
-                print(f"\n{Fore.YELLOW}{Style.BRIGHT}{ticker}{Style.RESET_ALL}")
-                
-                # Process each interval
-                for interval_key, interval_data in ticker_data.items():
-                    if not isinstance(interval_data, dict):
-                        continue
-                    
-                    signal = interval_data.get("signal", "neutral").upper()
-                    confidence = interval_data.get("confidence", 0.0)
-                    
-                    # Color code signal
-                    signal_color = {
-                        "BULLISH": Fore.GREEN,
-                        "BEARISH": Fore.RED,
-                        "NEUTRAL": Fore.YELLOW,
-                    }.get(signal, Fore.WHITE)
-                    
-                    # Display interval summary
-                    conf_color = Fore.GREEN if confidence >= 70 else Fore.YELLOW if confidence >= 40 else Fore.RED
-                    print(f"  {Fore.WHITE}Interval {interval_key}:{Style.RESET_ALL} "
-                          f"{signal_color}{signal}{Style.RESET_ALL} "
-                          f"({conf_color}{confidence:.0f}%{Style.RESET_ALL})")
-                    
-                    # Display detailed strategy signals
-                    strategy_signals = interval_data.get("strategy_signals", {})
-                    if strategy_signals:
-                        for strategy_name, strategy_data in strategy_signals.items():
-                            if isinstance(strategy_data, dict):
-                                strategy_signal = strategy_data.get("signal", "neutral").upper()
-                                strategy_conf = strategy_data.get("confidence", 0.0)
-                                metrics = strategy_data.get("metrics", {})
-                                
-                                strategy_signal_color = {
-                                    "BULLISH": Fore.GREEN,
-                                    "BEARISH": Fore.RED,
-                                    "NEUTRAL": Fore.YELLOW,
-                                }.get(strategy_signal, Fore.WHITE)
-                                
-                                print(f"    {Fore.CYAN}→ {strategy_name.replace('_', ' ').title()}:{Style.RESET_ALL} "
-                                      f"{strategy_signal_color}{strategy_signal}{Style.RESET_ALL} "
-                                      f"({strategy_conf:.0f}%)")
-                                
-                                # Display key metrics
-                                if metrics:
-                                    metric_strs = []
-                                    for metric_name, metric_value in metrics.items():
-                                        if isinstance(metric_value, (int, float)):
-                                            # Format metric value based on type
-                                            if "rsi" in metric_name.lower():
-                                                metric_strs.append(f"{metric_name}: {metric_value:.2f}")
-                                            elif "band" in metric_name.lower() or "sma" in metric_name.lower() or "close" in metric_name.lower():
-                                                metric_strs.append(f"{metric_name}: ${metric_value:,.2f}")
-                                            elif "level" in metric_name.lower():
-                                                metric_strs.append(f"{metric_name}: {metric_value}")
-                                            elif isinstance(metric_value, float) and abs(metric_value) < 1 and abs(metric_value) > 0:
-                                                metric_strs.append(f"{metric_name}: {metric_value:.4f}")
-                                            elif isinstance(metric_value, float) and abs(metric_value) < 0.0001:
-                                                # Very small numbers, use scientific notation
-                                                metric_strs.append(f"{metric_name}: {metric_value:.2e}")
-                                            else:
-                                                metric_strs.append(f"{metric_name}: {metric_value:.2f}")
-                                        elif isinstance(metric_value, str):
-                                            metric_strs.append(f"{metric_name}: {metric_value}")
-                                    
-                                    if metric_strs:
-                                        # Display metrics in a more readable format
-                                        metrics_line = ', '.join(metric_strs)
-                                        # Wrap long lines
-                                        max_line_length = 100
-                                        if len(metrics_line) > max_line_length:
-                                            # Split into multiple lines
-                                            words = metrics_line.split(', ')
-                                            current_line = []
-                                            current_length = 0
-                                            for word in words:
-                                                if current_length + len(word) + 2 > max_line_length and current_line:
-                                                    print(f"      {Fore.WHITE}Metrics:{Style.RESET_ALL} {', '.join(current_line)}")
-                                                    current_line = [word]
-                                                    current_length = len(word)
-                                                else:
-                                                    current_line.append(word)
-                                                    current_length += len(word) + 2
-                                            if current_line:
-                                                print(f"      {Fore.WHITE}Metrics:{Style.RESET_ALL} {', '.join(current_line)}")
-                                        else:
-                                            print(f"      {Fore.WHITE}Metrics:{Style.RESET_ALL} {metrics_line}")
-                
-                print()  # Empty line between tickers
+                if signal_strs:
+                    signal_rows.append([
+                        f"{Fore.CYAN}{ticker}{Style.RESET_ALL}",
+                        " | ".join(signal_strs)
+                    ])
             
-            print()  # Empty line between agents
+            if signal_rows:
+                print(tabulate(
+                    signal_rows,
+                    headers=[
+                        f"{Fore.CYAN}Ticker{Style.RESET_ALL}",
+                        f"{Fore.WHITE}Signals{Style.RESET_ALL}"
+                    ],
+                    tablefmt="grid",
+                    colalign=("left", "left"),
+                ))
+            else:
+                print(f"{Fore.YELLOW}No analyst signals available.{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.YELLOW}No analyst signals available.{Style.RESET_ALL}")
     
     print("\n" + "=" * 80 + "\n")

@@ -48,46 +48,45 @@ class RSIStrategy(BaseNode):
                 rsi_14 = calculate_rsi(df, period=14)
                 rsi_28 = calculate_rsi(df, period=28)
 
-                # Get latest RSI values
-                last_rsi_14 = rsi_14.iloc[-1]
-                last_rsi_28 = rsi_28.iloc[-1]
+                last_rsi_14 = rsi_14.iloc[-1] if not rsi_14.empty else float('nan')
+                last_rsi_28 = rsi_28.iloc[-1] if not rsi_28.empty else float('nan')
 
-                # Determine signal based on RSI values
-                signal = "neutral"
-                confidence = 50
+                if pd.isna(last_rsi_14) or pd.isna(last_rsi_28):
+                    technical_analysis[ticker][interval.value] = {
+                        "signal": "neutral",
+                        "confidence": 50,
+                        "strategy_signals": {
+                            "rsi": {
+                                "signal": "neutral",
+                                "confidence": 50,
+                                "metrics": {
+                                    "rsi_14": None,
+                                    "rsi_28": None,
+                                    "rsi_14_level": "insufficient_data",
+                                    "rsi_28_level": "insufficient_data",
+                                }
+                            }
+                        }
+                    }
+                    continue
 
-                # Strong oversold condition (both RSI periods < 30)
+                signal, confidence = "neutral", 50
+
                 if last_rsi_14 < 30 and last_rsi_28 < 30:
-                    signal = "bullish"
-                    # Higher confidence when RSI is more extreme
-                    confidence = min(75 + (30 - max(last_rsi_14, last_rsi_28)) * 2, 90)
-                # Strong overbought condition (both RSI periods > 70)
+                    signal, confidence = "bullish", min(75 + (30 - max(last_rsi_14, last_rsi_28)) * 2, 90)
                 elif last_rsi_14 > 70 and last_rsi_28 > 70:
-                    signal = "bearish"
-                    # Higher confidence when RSI is more extreme
-                    confidence = min(75 + (min(last_rsi_14, last_rsi_28) - 70) * 2, 90)
-                # Moderate oversold (RSI 14 < 30, RSI 28 < 40)
+                    signal, confidence = "bearish", min(75 + (min(last_rsi_14, last_rsi_28) - 70) * 2, 90)
                 elif last_rsi_14 < 30 and last_rsi_28 < 40:
-                    signal = "bullish"
-                    confidence = 65
-                # Moderate overbought (RSI 14 > 70, RSI 28 > 60)
+                    signal, confidence = "bullish", 65
                 elif last_rsi_14 > 70 and last_rsi_28 > 60:
-                    signal = "bearish"
-                    confidence = 65
-                # Weak oversold (only RSI 14 < 30)
+                    signal, confidence = "bearish", 65
                 elif last_rsi_14 < 30:
-                    signal = "bullish"
-                    confidence = 60
-                # Weak overbought (only RSI 14 > 70)
+                    signal, confidence = "bullish", 60
                 elif last_rsi_14 > 70:
-                    signal = "bearish"
-                    confidence = 60
-                # Neutral zone
+                    signal, confidence = "bearish", 60
                 else:
-                    signal = "neutral"
-                    # Adjust confidence based on how close to neutral (50)
                     distance_from_neutral = abs(last_rsi_14 - 50) / 50.0
-                    confidence = 50 + int(distance_from_neutral * 20)
+                    confidence = 50 + int(distance_from_neutral * 20) if not pd.isna(distance_from_neutral) else 50
 
                 technical_analysis[ticker][interval.value] = {
                     "signal": signal,

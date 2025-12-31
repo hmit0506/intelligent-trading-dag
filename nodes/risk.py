@@ -37,8 +37,8 @@ class RiskManagementNode(BaseNode):
             current_price = price_df["close"].iloc[-1]
             current_prices[ticker] = current_price
 
-            # Fixed Fractional Position Sizing parameters
-            risk_per_trade_pct = 0.01  # 1% risk per trade
+            # Fixed Fractional Position Sizing parameters (more aggressive for backtest)
+            risk_per_trade_pct = 0.02  # 2% risk per trade (increased from 1%)
             stop_loss_pct = 0.05  # 5% stop loss
 
             # Calculate stop loss price
@@ -51,12 +51,17 @@ class RiskManagementNode(BaseNode):
                 total_portfolio_value -= pos_data["short"] * current_prices.get(t, 0.0)
 
             # Calculate quantity based on Fixed Fractional Position Sizing
+            # Ensure minimum quantity for meaningful trades
             quantity_to_trade = 0.0
             if current_price > stop_loss_price:
                 risk_amount_per_share = current_price - stop_loss_price
                 if risk_amount_per_share > 0:
                     quantity_to_trade = (total_portfolio_value * risk_per_trade_pct) / risk_amount_per_share
                     quantity_to_trade = max(0.0, round(quantity_to_trade, 0))
+                    # Ensure minimum trade size (at least 0.001 for crypto)
+                    min_quantity = 0.001
+                    if quantity_to_trade > 0 and quantity_to_trade < min_quantity:
+                        quantity_to_trade = min_quantity
 
             risk_analysis[ticker] = {
                 "suggested_quantity": float(quantity_to_trade),

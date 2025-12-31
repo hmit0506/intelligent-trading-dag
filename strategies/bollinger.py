@@ -32,30 +32,42 @@ class BollingerStrategy(BaseNode):
                 if df.empty:
                     continue
 
-                # Calculate Bollinger Bands
                 upper_band, lower_band = calculate_bollinger_bands(df)
-                sma = df['close'].rolling(window=20).mean() # Assuming default window 20
-
-                signal = "neutral"
-                confidence = 50
-
+                sma = df['close'].rolling(window=20).mean()
                 last_close = df['close'].iloc[-1]
-                last_upper = upper_band.iloc[-1]
-                last_lower = lower_band.iloc[-1]
-                last_sma = sma.iloc[-1]
+                last_upper = upper_band.iloc[-1] if not upper_band.empty else float('nan')
+                last_lower = lower_band.iloc[-1] if not lower_band.empty else float('nan')
+                last_sma = sma.iloc[-1] if not sma.empty else float('nan')
+
+                if pd.isna(last_upper) or pd.isna(last_lower) or pd.isna(last_sma):
+                    technical_analysis[ticker][interval.value] = {
+                        "signal": "neutral",
+                        "confidence": 50,
+                        "strategy_signals": {
+                            "bollinger_bands": {
+                                "signal": "neutral",
+                                "confidence": 50,
+                                "metrics": {
+                                    "close": float(last_close),
+                                    "upper_band": None,
+                                    "lower_band": None,
+                                    "sma": None,
+                                }
+                            }
+                        }
+                    }
+                    continue
 
                 if last_close < last_lower:
-                    signal = "bullish" # Price below lower band, potential buy signal
-                    confidence = 75
+                    signal, confidence = "bullish", 75
                 elif last_close > last_upper:
-                    signal = "bearish" # Price above upper band, potential sell signal
-                    confidence = 75
+                    signal, confidence = "bearish", 75
                 elif last_close > last_sma:
-                    signal = "bullish" # Price above SMA, indicating upward momentum within bands
-                    confidence = 60
+                    signal, confidence = "bullish", 60
                 elif last_close < last_sma:
-                    signal = "bearish" # Price below SMA, indicating downward momentum within bands
-                    confidence = 60
+                    signal, confidence = "bearish", 60
+                else:
+                    signal, confidence = "neutral", 50
 
                 technical_analysis[ticker][interval.value] = {
                     "signal": signal,

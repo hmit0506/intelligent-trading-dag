@@ -16,6 +16,23 @@ initial_cash: 100000
 # Margin requirement for short positions (0.0 = no margin)
 margin_requirement: 0.0
 
+# Live mode portfolio initialization (only used in live mode)
+# Option 1: Sync from exchange (requires BINANCE_API_KEY and BINANCE_API_SECRET)
+sync_from_exchange: false  # Set to true to sync portfolio from Binance account
+
+# Option 2: Manual initial positions (used if sync_from_exchange is false)
+# initial_positions:
+#   cash: 100000  # Optional: override initial_cash
+#   positions:
+#     BTCUSDT:
+#       long: 0.1  # Long position quantity
+#       long_cost_basis: 50000.0  # Average cost per unit (optional, uses current price if not set)
+#       short: 0.0  # Short position quantity
+#       short_cost_basis: 0.0  # Average cost per unit for short (optional)
+#     ETHUSDT:
+#       long: 2.0
+#       long_cost_basis: 3000.0
+
 # Display options
 show_reasoning: false  # Show LLM reasoning process
 show_agent_graph: true  # Generate and save workflow graph

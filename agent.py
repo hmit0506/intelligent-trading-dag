@@ -49,7 +49,8 @@ class Agent:
         model_name: str = "gpt-4o",
         model_provider: str = "openai",
         model_base_url: Optional[str] = None,
-        future_timepoints: Optional[Dict[str, Dict[str, float]]] = None
+        future_timepoints: Optional[Dict[str, Dict[str, float]]] = None,
+        prefetched_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Execute the trading workflow.
@@ -64,25 +65,32 @@ class Agent:
             model_provider: LLM provider
             model_base_url: Optional base URL for LLM
             future_timepoints: Optional future price projections by interval and ticker
+            prefetched_data: Optional prefetched data dictionary for backtest mode (key format: "{ticker}_{timeframe}")
             
         Returns:
             Dictionary with decisions and analyst signals
         """
+        data_dict = {
+            "primary_interval": primary_interval,
+            "intervals": self.intervals,
+            "tickers": tickers,
+            "portfolio": portfolio,
+            "end_date": end_date,
+            "analyst_signals": {},
+            "future_timepoints": future_timepoints,
+        }
+        
+        # Add prefetched data if provided (for backtest mode)
+        if prefetched_data is not None:
+            data_dict["prefetched_data"] = prefetched_data
+        
         final_state = self.agent.invoke({
             "messages": [
                 HumanMessage(
                     content="Make trading decisions based on the provided data.",
                 )
             ],
-            "data": {
-                "primary_interval": primary_interval,
-                "intervals": self.intervals,
-                "tickers": tickers,
-                "portfolio": portfolio,
-                "end_date": end_date,
-                "analyst_signals": {},
-                "future_timepoints": future_timepoints,
-            },
+            "data": data_dict,
             "metadata": {
                 "show_reasoning": show_reasoning,
                 "model_name": model_name,

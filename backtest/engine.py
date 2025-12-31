@@ -36,7 +36,8 @@ class Backtester:
             show_reasoning: bool = False,
             print_frequency: int = 1,
             use_progress_bar: bool = True,
-            log_file: Optional[str] = None
+            log_file: Optional[str] = None,
+            initial_positions: Optional[Dict[str, Any]] = None
     ):
         """
         Backtester
@@ -69,6 +70,8 @@ class Backtester:
         self.print_frequency = print_frequency  # Print every N iterations
         self.use_progress_bar = use_progress_bar
         self.log_file = log_file
+        self.initial_positions = initial_positions  # Store for later application
+        self.initial_portfolio_value = None  # Will be calculated after initial positions are applied
         self.output_dir = Path("output")
         self.output_dir.mkdir(exist_ok=True)
         self.binance_data_provider = BinanceDataProvider()
@@ -300,24 +303,151 @@ class Backtester:
         return total_value
 
     def prefetch_data(self):
-        """Pre-fetch all data needed for the backtest period."""
-        print("\nPre-fetching data for the entire backtest period...")
-        for ticker in self.tickers:
-            # Fetch price data for the entire period
-            data = self.binance_data_provider.get_historical_klines(symbol=ticker,
-                                                                    timeframe=self.primary_interval.value,
-                                                                    start_date=self.start_date,
-                                                                    end_date=self.end_date)
-            # Filter data to only include dates from start_date onwards
-            if not data.empty:
-                data = data[data['open_time'] >= self.start_date].reset_index(drop=True)
-            self.klines[ticker] = data
+        """
+        Pre-fetch all data needed for the backtest period with warmup period.
+        Fetches additional historical data before start_date to ensure technical indicators
+        have sufficient data from the first data point.
+        Disables cache to ensure fresh data from API.
+        """
+        print("\nPre-fetching data for the entire backtest period with warmup (no cache)...")
+        
+        if not hasattr(self, 'prefetched_data'):
+            self.prefetched_data = {}
+        
+        from datetime import timedelta
+        
+        # Calculate warmup period based on longest indicator requirement
+        # Momentum strategy needs 126 periods (6 months for daily, proportionally for other intervals)
+        max_warmup_periods = 126
+        primary_interval_delta = self.primary_interval.to_timedelta()
+        warmup_duration = primary_interval_delta * max_warmup_periods
+        
+        # Start fetching from (start_date - warmup_duration) to ensure sufficient historical data
+        warmup_start_date = self.start_date - warmup_duration
+        end_date_inclusive = self.end_date + timedelta(days=1) - timedelta(seconds=1)
+        
+        print(f"Warmup period: {max_warmup_periods} periods ({warmup_duration})")
+        print(f"Fetching data from {warmup_start_date} to {end_date_inclusive}")
+        
+        for interval in self.intervals:
+            for ticker in self.tickers:
+                # Fetch data including warmup period
+                data = self.binance_data_provider.get_historical_klines(
+                    symbol=ticker,
+                    timeframe=interval.value,
+                    start_date=warmup_start_date,  # Start earlier for warmup
+                    end_date=end_date_inclusive,
+                    use_cache=False
+                )
+                
+                if not data.empty:
+                    # Store all data (including warmup) in prefetched_data for strategy calculations
+                    # This ensures strategies have sufficient historical data from the first data point
+                    cache_key = f"{ticker}_{interval.value}"
+                    self.prefetched_data[cache_key] = data
+                    
+                    # But only use data from start_date for backtest iteration
+                    backtest_data = data[
+                        (data['open_time'] >= self.start_date) & 
+                        (data['open_time'] <= self.end_date)
+                    ].reset_index(drop=True)
+                    
+                    if interval == self.primary_interval:
+                        self.klines[ticker] = backtest_data
+                    
+                    warmup_count = len(data) - len(backtest_data)
+                    if len(backtest_data) > 0:
+                        print(f"  {ticker} {interval.value}: {len(backtest_data)} backtest points from {backtest_data.iloc[0]['open_time']} to {backtest_data.iloc[-1]['open_time']} (warmup: {warmup_count} points)")
+                    else:
+                        print(f"  {ticker} {interval.value}: No backtest data retrieved (warmup: {warmup_count} points)")
+                else:
+                    cache_key = f"{ticker}_{interval.value}"
+                    self.prefetched_data[cache_key] = data
+                    print(f"  {ticker} {interval.value}: No data retrieved")
 
         print("Data pre-fetch complete.")
+    
+    def _calculate_initial_portfolio_value(self) -> None:
+        """
+        Calculate initial portfolio value including positions.
+        This is used as the baseline for return calculations in backtest mode.
+        """
+        # Start with cash
+        initial_value = self.portfolio["cash"]
+        
+        # Add value of initial positions at cost basis
+        for ticker in self.tickers:
+            pos = self.portfolio["positions"][ticker]
+            if pos["long"] > 0 and pos["long_cost_basis"] > 0:
+                initial_value += pos["long"] * pos["long_cost_basis"]
+            if pos["short"] > 0 and pos["short_cost_basis"] > 0:
+                initial_value -= pos["short"] * pos["short_cost_basis"]  # Short reduces value
+        
+        self.initial_portfolio_value = initial_value
 
     def run_backtest(self):
         # Pre-fetch all data at the start
         self.prefetch_data()
+        
+        # Apply initial positions if provided (for backtest mode)
+        # This allows backtesting with existing positions
+        if hasattr(self, 'initial_positions') and self.initial_positions:
+            from datetime import datetime
+            from data.provider import BinanceDataProvider
+            from colorama import Fore, Style
+            
+            # Get prices at start_date for cost basis calculation
+            data_provider = BinanceDataProvider()
+            start_prices = {}
+            for ticker in self.tickers:
+                try:
+                    # Get price at start_date
+                    start_data = data_provider.get_history_klines_with_end_time(
+                        symbol=ticker,
+                        timeframe=self.primary_interval.value,
+                        end_time=self.start_date,
+                        limit=1
+                    )
+                    if start_data is not None and not start_data.empty:
+                        start_prices[ticker] = float(start_data.iloc[-1]["close"])
+                except Exception:
+                    pass
+            
+            # Apply initial positions
+            print(f"{Fore.GREEN}Applying initial positions to backtest portfolio{Style.RESET_ALL}")
+            if "cash" in self.initial_positions:
+                self.portfolio["cash"] = float(self.initial_positions["cash"])
+                print(f"  Initial cash: ${self.portfolio['cash']:,.2f}")
+            
+            if "positions" in self.initial_positions:
+                for ticker, position_data in self.initial_positions["positions"].items():
+                    if ticker not in self.portfolio["positions"]:
+                        print(f"{Fore.YELLOW}Warning: Ticker {ticker} not in configured tickers, skipping{Style.RESET_ALL}")
+                        continue
+                    
+                    pos = self.portfolio["positions"][ticker]
+                    
+                    if "long" in position_data:
+                        pos["long"] = float(position_data["long"])
+                        # Use provided cost basis or start_date price
+                        pos["long_cost_basis"] = float(position_data.get("long_cost_basis", start_prices.get(ticker, 0.0)))
+                        if pos["long"] > 0:
+                            print(f"  Initial position: {ticker} long {pos['long']:.4f} @ ${pos['long_cost_basis']:.2f}")
+                    
+                    if "short" in position_data:
+                        pos["short"] = float(position_data["short"])
+                        pos["short_cost_basis"] = float(position_data.get("short_cost_basis", start_prices.get(ticker, 0.0)))
+                        if pos["short"] > 0:
+                            margin_required = pos["short"] * pos["short_cost_basis"] * self.portfolio["margin_requirement"]
+                            pos["short_margin_used"] = margin_required
+                            self.portfolio["margin_used"] += margin_required
+                            print(f"  Initial position: {ticker} short {pos['short']:.4f} @ ${pos['short_cost_basis']:.2f}")
+            
+            # Calculate initial portfolio value (for return calculation)
+            self._calculate_initial_portfolio_value()
+        else:
+            # If no initial positions, calculate initial portfolio value (cash only)
+            self._calculate_initial_portfolio_value()
 
         # Check all are DataFrames and collect lengths
         lengths = []
@@ -340,13 +470,41 @@ class Backtester:
 
         print("\nStarting backtest...")
 
-        # Initialize portfolio values list with initial capital
+        # Initialize portfolio values list with initial portfolio value
+        initial_value = self.initial_portfolio_value if self.initial_portfolio_value else self.initial_capital
         if len(data_df) > 0:
-            self.portfolio_values = [{"Date": data_df.loc[0, 'open_time'], "Portfolio Value": self.initial_capital}]
+            self.portfolio_values = [{"Date": data_df.loc[0, 'open_time'], "Portfolio Value": initial_value}]
         else:
             self.portfolio_values = []
 
         print(f"Backtest will process {len(data_df)} data points from {self.start_date} to {self.end_date}")
+        
+        # Display initial portfolio information
+        from colorama import Fore, Style
+        print(f"\n{Fore.WHITE}{Style.BRIGHT}INITIAL PORTFOLIO:{Style.RESET_ALL}")
+        print(f"Initial Portfolio Value: {Fore.WHITE}${initial_value:,.2f}{Style.RESET_ALL}")
+        print(f"Cash: {Fore.CYAN}${self.portfolio['cash']:,.2f}{Style.RESET_ALL}")
+        
+        # Display initial positions if any
+        has_initial_positions = False
+        for ticker in self.tickers:
+            pos = self.portfolio["positions"][ticker]
+            if pos["long"] > 0 or pos["short"] > 0:
+                has_initial_positions = True
+                break
+        
+        if has_initial_positions:
+            print(f"{Fore.WHITE}Initial Positions:{Style.RESET_ALL}")
+            for ticker in self.tickers:
+                pos = self.portfolio["positions"][ticker]
+                if pos["long"] > 0:
+                    print(f"  {Fore.GREEN}{ticker}: Long {pos['long']:.4f} @ ${pos['long_cost_basis']:.2f}{Style.RESET_ALL}")
+                if pos["short"] > 0:
+                    print(f"  {Fore.RED}{ticker}: Short {pos['short']:.4f} @ ${pos['short_cost_basis']:.2f}{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.CYAN}No initial positions (cash only){Style.RESET_ALL}")
+        
+        print()  # Empty line before backtest starts
 
         # print(self.portfolio_values)
         agent = Agent(
@@ -385,6 +543,9 @@ class Backtester:
             # ---------------------------------------------------------------
             # 1) Execute the agent's trades
             # ---------------------------------------------------------------
+            # Pass prefetched data to agent state for DataNode to use
+            prefetched_data = getattr(self, 'prefetched_data', {})
+            
             output = agent.run(
                 primary_interval=self.primary_interval,
                 tickers=self.tickers,
@@ -394,16 +555,25 @@ class Backtester:
                 model_provider=self.model_provider,
                 model_base_url=self.model_base_url,
                 show_reasoning=self.show_reasoning,
+                prefetched_data=prefetched_data,
             )
 
             decisions = output.get("decisions")
             analyst_signals = output["analyst_signals"]
 
             # Execute trades for each ticker
+            # Decisions structure: {ticker: {timepoint: {action, quantity, ...}}}
             executed_trades = {}
             for ticker in self.tickers:
-                decision = decisions.get(ticker, {"action": "hold", "quantity": 0.0})
-                action, quantity = decision.get("action", "hold"), decision.get("quantity", 0.0)
+                ticker_decisions = decisions.get(ticker, {})
+                # Use "now" timepoint decision, fallback to first available timepoint
+                decision = ticker_decisions.get("now", {})
+                if not decision and ticker_decisions:
+                    # Fallback to first available timepoint
+                    decision = next(iter(ticker_decisions.values()), {})
+                
+                action = decision.get("action", "hold")
+                quantity = decision.get("quantity", 0.0)
 
                 executed_quantity = self.execute_trade(ticker, action, quantity, current_prices[ticker])
                 executed_trades[ticker] = executed_quantity
@@ -443,7 +613,12 @@ class Backtester:
             }
 
             for ticker in self.tickers:
-                decision = decisions.get(ticker, {"action": "hold", "quantity": 0.0, "reasoning": ""})
+                ticker_decisions = decisions.get(ticker, {})
+                # Use "now" timepoint decision, fallback to first available
+                decision = ticker_decisions.get("now", {})
+                if not decision and ticker_decisions:
+                    decision = next(iter(ticker_decisions.values()), {})
+                
                 action, quantity, reasoning = (
                     decision.get("action", "hold"),
                     decision.get("quantity", 0.0),
@@ -476,13 +651,39 @@ class Backtester:
             # For each ticker, record signals/trades
             for ticker in self.tickers:
                 ticker_signals = {}
-                for agent_name, signals in analyst_signals.items():
-                    if ticker in signals:
-                        ticker_signals[agent_name] = signals[ticker]
-
-                bullish_count = len([s for s in ticker_signals.values() if s.get("signal", "").lower() == "bullish"])
-                bearish_count = len([s for s in ticker_signals.values() if s.get("signal", "").lower() == "bearish"])
-                neutral_count = len([s for s in ticker_signals.values() if s.get("signal", "").lower() == "neutral"])
+                bullish_count = 0
+                bearish_count = 0
+                neutral_count = 0
+                
+                # Extract signals from each agent (signals structure: agent -> ticker -> interval -> signal)
+                # Count signals per agent (one signal per agent, using primary interval)
+                for agent_name, agent_data in analyst_signals.items():
+                    if agent_name == "risk_management_agent":
+                        continue
+                    if ticker in agent_data:
+                        ticker_data = agent_data[ticker]
+                        if isinstance(ticker_data, dict):
+                            # Use primary interval signal (same logic as portfolio node)
+                            primary_signal = None
+                            primary_interval_str = self.primary_interval.value if hasattr(self.primary_interval, 'value') else str(self.primary_interval)
+                            
+                            # Try to find primary interval signal first
+                            if primary_interval_str in ticker_data:
+                                primary_signal = ticker_data[primary_interval_str]
+                            elif ticker_data:
+                                # Fallback to first available interval
+                                primary_signal = next(iter(ticker_data.values()), None)
+                            
+                            if primary_signal and isinstance(primary_signal, dict):
+                                signal = primary_signal.get("signal", "neutral").lower()
+                                if signal == "bullish":
+                                    bullish_count += 1
+                                elif signal == "bearish":
+                                    bearish_count += 1
+                                else:
+                                    neutral_count += 1
+                                # Store signal for reference
+                                ticker_signals[agent_name] = primary_signal
 
                 # Calculate net position value
                 pos = self.portfolio["positions"][ticker]
@@ -491,8 +692,26 @@ class Backtester:
                 net_position_value = long_val - short_val
 
                 # Get the action and quantity from the decisions
-                action = decisions.get(ticker, {}).get("action", "hold")
+                # Decisions structure: {ticker: {timepoint: {action, quantity, ...}}}
+                ticker_decisions = decisions.get(ticker, {})
+                decision = ticker_decisions.get("now", {})
+                if not decision and ticker_decisions:
+                    # Fallback to first available timepoint
+                    decision = next(iter(ticker_decisions.values()), {})
+                
+                action = decision.get("action", "hold")
+                # Use executed quantity (actual quantity traded), not desired quantity
                 quantity = executed_trades.get(ticker, 0.0)
+                
+                # If action is hold but quantity > 0, it means a trade was executed in previous iteration
+                # Show the actual action that was executed
+                if action == "hold" and quantity > 0:
+                    # Try to infer action from position changes
+                    pos = self.portfolio["positions"][ticker]
+                    if pos["short"] > 0:
+                        action = "short"  # Likely a short position was opened
+                    elif pos["long"] > 0:
+                        action = "buy"  # Likely a long position was opened
 
                 # Append the agent action to the table rows
                 date_rows.append(
@@ -512,9 +731,10 @@ class Backtester:
             # ---------------------------------------------------------------
             # 4) Calculate performance summary metrics
             # ---------------------------------------------------------------
-            # Calculate portfolio return vs. initial capital
+            # Calculate portfolio return vs. initial portfolio value (including initial positions)
             # The realized gains are already reflected in cash balance, so we don't add them separately
-            portfolio_return = (total_value / self.initial_capital - 1) * 100
+            initial_value = self.initial_portfolio_value if self.initial_portfolio_value else self.initial_capital
+            portfolio_return = (total_value / initial_value - 1) * 100
 
             # Add summary row for this day
             date_rows.append(
@@ -542,10 +762,13 @@ class Backtester:
 
             # Print results based on frequency
             should_print = (iteration_count % self.print_frequency == 0) or (iteration_count == len(data_df))
+            is_first = (iteration_count == 1)
+            is_final = (iteration_count == len(data_df))
             
             if should_print:
                 table_rows.extend(date_rows)
-                print_backtest_results(table_rows)
+                # Never clear screen to preserve backtest execution history
+                print_backtest_results(table_rows, clear_screen=False, max_rows=15)
                 
                 # Log to file if enabled
                 if self.logger:
@@ -633,10 +856,13 @@ class Backtester:
             return performance_df
 
         final_portfolio_value = performance_df["Portfolio Value"].iloc[-1]
-        total_return = ((final_portfolio_value - self.initial_capital) / self.initial_capital) * 100
+        initial_value = self.initial_portfolio_value if self.initial_portfolio_value else self.initial_capital
+        total_return = ((final_portfolio_value - initial_value) / initial_value) * 100
 
         print(f"\n{Fore.WHITE}{Style.BRIGHT}PORTFOLIO PERFORMANCE SUMMARY:{Style.RESET_ALL}")
-        print(f"Total Return: {Fore.GREEN if total_return >= 0 else Fore.RED}{total_return:.2f}%{Style.RESET_ALL}")
+        print(f"Total Return (vs Initial Portfolio Value): {Fore.GREEN if total_return >= 0 else Fore.RED}{total_return:.2f}%{Style.RESET_ALL}")
+        print(f"  Initial Portfolio Value: ${initial_value:,.2f}")
+        print(f"  Final Portfolio Value: ${final_portfolio_value:,.2f}")
 
         # Print realized P&L for informational purposes only
         total_realized_gains = sum(
