@@ -390,7 +390,9 @@ See the Configuration section above for detailed examples. Key options include:
 
 **Backtest Mode**:
 - Data range is defined by `start_date` and `end_date` in `config.yaml`
-- Automatically fetches additional historical data (126 periods) before `start_date` for technical indicator warmup
+- Fetches at least 500 K-lines per interval, or the entire date range if it needs more
+- Calculates required K-lines based on the date range and interval duration
+- Filters data to use only points within `start_date` to `end_date` for backtest iteration
 - Each data point triggers a complete workflow execution:
   1. DataNode fetches historical data up to current timepoint
   2. All strategies execute in parallel, analyzing all tickers and intervals
@@ -417,12 +419,15 @@ Each strategy:
 - Generates signals with confidence scores (0-100%)
 - Signals are aggregated and used by PortfolioManagementNode for final decisions
 
-### Historical Data Warmup
+### Historical Data Fetching
 
-The system automatically fetches 126 periods of historical data before `start_date` to ensure:
-- Technical indicators (RSI, EMA, MACD, Bollinger Bands, etc.) have sufficient data from the first data point
-- Strategies can calculate accurate signals from the start of backtest
-- No NaN values or default signals due to insufficient data
+Both backtest and live modes use similar data fetching mechanisms:
+- **Live mode**: Fetches exactly 500 K-lines ending at current time for each configured interval
+- **Backtest mode**: Fetches at least 500 K-lines, or the entire date range if it requires more than 500 K-lines
+  - Calculates required K-lines based on `start_date` to `end_date` range
+  - Uses `max(500, required_k_lines)` to ensure sufficient data coverage
+  - Filters to use only data within `start_date` to `end_date` for iteration
+- This ensures sufficient historical data for technical indicator calculations while maintaining efficiency
 
 ## Troubleshooting
 
@@ -445,7 +450,9 @@ The system automatically fetches 126 periods of historical data before `start_da
 
 ### Data Issues
 - If backtest shows insufficient data, check that `start_date` and `end_date` are valid
-- Historical data warmup automatically fetches additional data, but ensure Binance API is accessible
+- Backtest mode automatically fetches enough data to cover the entire date range (at least 500 K-lines)
+- Live mode fetches exactly 500 K-lines per interval
+- Ensure Binance API is accessible for data fetching
 - For live mode, ensure API keys have read permissions for account balance sync
 
 ## License

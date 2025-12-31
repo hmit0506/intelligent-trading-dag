@@ -304,49 +304,49 @@ class Backtester:
 
     def prefetch_data(self):
         """
-        Pre-fetch all data needed for the backtest period with warmup period.
-        Fetches additional historical data before start_date to ensure technical indicators
-        have sufficient data from the first data point.
-        Disables cache to ensure fresh data from API.
+        Pre-fetch all data needed for the backtest period.
+        Fetches at least 500 K-lines, or the entire date range if it requires more than 500 K-lines.
+        This ensures sufficient data for backtest while maintaining consistency with live mode.
         """
-        print("\nPre-fetching data for the entire backtest period with warmup (no cache)...")
+        print("\nPre-fetching data for backtest...")
         
         if not hasattr(self, 'prefetched_data'):
             self.prefetched_data = {}
         
         from datetime import timedelta
+        import pandas as pd
         
-        # Calculate warmup period based on longest indicator requirement
-        # Momentum strategy needs 126 periods (6 months for daily, proportionally for other intervals)
-        max_warmup_periods = 126
-        primary_interval_delta = self.primary_interval.to_timedelta()
-        warmup_duration = primary_interval_delta * max_warmup_periods
-        
-        # Start fetching from (start_date - warmup_duration) to ensure sufficient historical data
-        warmup_start_date = self.start_date - warmup_duration
+        # Calculate the date range for backtest
+        date_range = self.end_date - self.start_date
         end_date_inclusive = self.end_date + timedelta(days=1) - timedelta(seconds=1)
         
-        print(f"Warmup period: {max_warmup_periods} periods ({warmup_duration})")
-        print(f"Fetching data from {warmup_start_date} to {end_date_inclusive}")
+        print(f"Backtest date range: {self.start_date} to {self.end_date} ({date_range})")
         
         for interval in self.intervals:
             for ticker in self.tickers:
-                # Fetch data including warmup period
-                data = self.binance_data_provider.get_historical_klines(
+                # Calculate how many K-lines are needed for the backtest date range
+                interval_delta = interval.to_timedelta()
+                required_k_lines = int(date_range / interval_delta) + 1  # +1 to include both start and end
+                
+                # Use at least 500 K-lines, or the entire range if it needs more
+                k_lines_to_fetch = max(500, required_k_lines)
+                
+                print(f"  {ticker} {interval.value}: Backtest range needs ~{required_k_lines} K-lines, fetching {k_lines_to_fetch} K-lines")
+                
+                # Fetch data ending at end_date
+                data = self.binance_data_provider.get_history_klines_with_end_time(
                     symbol=ticker,
                     timeframe=interval.value,
-                    start_date=warmup_start_date,  # Start earlier for warmup
-                    end_date=end_date_inclusive,
-                    use_cache=False
+                    end_time=end_date_inclusive,
+                    limit=k_lines_to_fetch
                 )
                 
                 if not data.empty:
-                    # Store all data (including warmup) in prefetched_data for strategy calculations
-                    # This ensures strategies have sufficient historical data from the first data point
+                    # Store all fetched data in prefetched_data for strategy calculations
                     cache_key = f"{ticker}_{interval.value}"
                     self.prefetched_data[cache_key] = data
                     
-                    # But only use data from start_date for backtest iteration
+                    # Filter data to only use data within backtest date range for iteration
                     backtest_data = data[
                         (data['open_time'] >= self.start_date) & 
                         (data['open_time'] <= self.end_date)
@@ -355,15 +355,21 @@ class Backtester:
                     if interval == self.primary_interval:
                         self.klines[ticker] = backtest_data
                     
-                    warmup_count = len(data) - len(backtest_data)
-                    if len(backtest_data) > 0:
-                        print(f"  {ticker} {interval.value}: {len(backtest_data)} backtest points from {backtest_data.iloc[0]['open_time']} to {backtest_data.iloc[-1]['open_time']} (warmup: {warmup_count} points)")
+                    # Count data points
+                    total_count = len(data)
+                    backtest_count = len(backtest_data)
+                    warmup_count = total_count - backtest_count
+                    
+                    if backtest_count > 0:
+                        print(f"    Retrieved {total_count} total K-lines, {backtest_count} in backtest range ({backtest_data.iloc[0]['open_time']} to {backtest_data.iloc[-1]['open_time']}), {warmup_count} before start_date")
+                    elif total_count > 0:
+                        print(f"    Retrieved {total_count} total K-lines, but none in backtest range (all before start_date)")
                     else:
-                        print(f"  {ticker} {interval.value}: No backtest data retrieved (warmup: {warmup_count} points)")
+                        print(f"    No data retrieved")
                 else:
                     cache_key = f"{ticker}_{interval.value}"
                     self.prefetched_data[cache_key] = data
-                    print(f"  {ticker} {interval.value}: No data retrieved")
+                    print(f"    No data retrieved")
 
         print("Data pre-fetch complete.")
     

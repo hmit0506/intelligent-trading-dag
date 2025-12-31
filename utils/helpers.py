@@ -366,44 +366,39 @@ def format_live_results(decisions: Dict[str, Any], analyst_signals: Optional[Dic
     if analyst_signals:
         print(f"\n{Fore.WHITE}{Style.BRIGHT}ANALYST SIGNALS:{Style.RESET_ALL}\n")
         
-        # Group signals by ticker
-        signals_by_ticker = {}
+        # Process each agent separately for detailed display
         for agent_name, signals in analyst_signals.items():
             if agent_name == "risk_management_agent":
                 continue
-            if isinstance(signals, dict):
-                for ticker, signal_data in signals.items():
-                    if ticker not in signals_by_ticker:
-                        signals_by_ticker[ticker] = {}
-                    signals_by_ticker[ticker][agent_name] = signal_data
-        
-        if signals_by_ticker:
+            if not isinstance(signals, dict):
+                continue
+            
+            # Get agent display name
+            agent_display_name = agent_name.replace("_", " ").title()
+            print(f"{Fore.CYAN}{Style.BRIGHT}{agent_display_name}:{Style.RESET_ALL}\n")
+            
+            # Process each ticker
             signal_rows = []
-            for ticker, signals in signals_by_ticker.items():
-                signal_strs = []
-                for agent_name, signal_data in signals.items():
-                    if isinstance(signal_data, dict):
-                        # Strategy signals are structured as: ticker -> interval -> {signal, confidence, ...}
-                        # We need to extract signal from the interval data
-                        # Try to get signal from primary interval or first available interval
-                        direction = "neutral"
-                        confidence = 0.0
+            for ticker, signal_data in signals.items():
+                if not isinstance(signal_data, dict):
+                    continue
+                
+                # Check if signal_data is interval-based (ticker -> interval -> signal)
+                is_interval_based = any(
+                    isinstance(v, dict) and ("signal" in v or "confidence" in v)
+                    for v in signal_data.values()
+                )
+                
+                if is_interval_based:
+                    # Display signals for each interval
+                    for interval, interval_data in signal_data.items():
+                        if not isinstance(interval_data, dict):
+                            continue
                         
-                        # Check if signal_data is already a signal dict (has "signal" key directly)
-                        if "signal" in signal_data and "confidence" in signal_data:
-                            direction = signal_data.get("signal", "neutral")
-                            confidence = signal_data.get("confidence", 0.0)
-                        else:
-                            # signal_data is a dict of intervals: {"1h": {...}, "4h": {...}}
-                            # Try to find signal from any interval (prefer first available)
-                            for interval_key, interval_signal in signal_data.items():
-                                if isinstance(interval_signal, dict):
-                                    if "signal" in interval_signal:
-                                        direction = interval_signal.get("signal", "neutral")
-                                        confidence = interval_signal.get("confidence", 0.0)
-                                        break
+                        direction = interval_data.get("signal", "neutral")
+                        confidence = interval_data.get("confidence", 0.0)
                         
-                        # Normalize direction (handle both "signal" and "direction" keys)
+                        # Normalize direction
                         if direction == "bullish":
                             direction = "BULLISH"
                         elif direction == "bearish":
@@ -417,15 +412,72 @@ def format_live_results(decisions: Dict[str, Any], analyst_signals: Optional[Dic
                             "NEUTRAL": Fore.YELLOW,
                         }.get(direction, Fore.WHITE)
                         
-                        signal_strs.append(
-                            f"{agent_name}: {direction_color}{direction}{Style.RESET_ALL} "
-                            f"({confidence:.0f}%)"
-                        )
-                
-                if signal_strs:
+                        # Extract detailed metrics
+                        metrics_info = []
+                        strategy_signals = interval_data.get("strategy_signals", {})
+                        
+                        if strategy_signals:
+                            for sub_strategy, sub_data in strategy_signals.items():
+                                if isinstance(sub_data, dict):
+                                    sub_metrics = sub_data.get("metrics", {})
+                                    if sub_metrics:
+                                        # Format key metrics based on strategy type
+                                        metric_strs = []
+                                        for key, value in sub_metrics.items():
+                                            if value is not None:
+                                                try:
+                                                    import pandas as pd
+                                                    is_na = pd.isna(value) if isinstance(value, float) else False
+                                                except ImportError:
+                                                    is_na = False
+                                                if not is_na:
+                                                    # Format metric name and value
+                                                    metric_name = key.replace("_", " ").title()
+                                                    if isinstance(value, float):
+                                                        metric_strs.append(f"{metric_name}: {value:.2f}")
+                                                    elif isinstance(value, (int, str)):
+                                                        metric_strs.append(f"{metric_name}: {value}")
+                                        
+                                        if metric_strs:
+                                            # Limit to 2-3 key metrics per sub-strategy
+                                            key_metrics = metric_strs[:3]
+                                            metrics_info.append(f"{Fore.WHITE}{sub_strategy.replace('_', ' ').title()}{Style.RESET_ALL}: {', '.join(key_metrics)}")
+                        
+                        # Build signal display with color coding
+                        conf_color = Fore.GREEN if confidence >= 70 else (Fore.YELLOW if confidence >= 40 else Fore.RED)
+                        signal_display = f"{direction_color}{direction}{Style.RESET_ALL} {conf_color}({confidence:.0f}%){Style.RESET_ALL}"
+                        
+                        if metrics_info:
+                            # Display metrics on new lines for better readability
+                            signal_display += "\n" + "\n".join([f"  {info}" for info in metrics_info[:2]])  # Limit to 2 sub-strategies
+                        
+                        signal_rows.append([
+                            f"{Fore.CYAN}{ticker}{Style.RESET_ALL}",
+                            f"{Fore.YELLOW}{interval.upper()}{Style.RESET_ALL}",
+                            signal_display
+                        ])
+                else:
+                    # Direct signal format (backward compatibility)
+                    direction = signal_data.get("signal", "neutral")
+                    confidence = signal_data.get("confidence", 0.0)
+                    
+                    if direction == "bullish":
+                        direction = "BULLISH"
+                    elif direction == "bearish":
+                        direction = "BEARISH"
+                    else:
+                        direction = "NEUTRAL"
+                    
+                    direction_color = {
+                        "BULLISH": Fore.GREEN,
+                        "BEARISH": Fore.RED,
+                        "NEUTRAL": Fore.YELLOW,
+                    }.get(direction, Fore.WHITE)
+                    
                     signal_rows.append([
                         f"{Fore.CYAN}{ticker}{Style.RESET_ALL}",
-                        " | ".join(signal_strs)
+                        f"{Fore.YELLOW}ALL{Style.RESET_ALL}",
+                        f"{direction_color}{direction}{Style.RESET_ALL} ({confidence:.0f}%)"
                     ])
             
             if signal_rows:
@@ -433,14 +485,15 @@ def format_live_results(decisions: Dict[str, Any], analyst_signals: Optional[Dic
                     signal_rows,
                     headers=[
                         f"{Fore.CYAN}Ticker{Style.RESET_ALL}",
-                        f"{Fore.WHITE}Signals{Style.RESET_ALL}"
+                        f"{Fore.YELLOW}Interval{Style.RESET_ALL}",
+                        f"{Fore.WHITE}Signal & Details{Style.RESET_ALL}"
                     ],
                     tablefmt="grid",
-                    colalign=("left", "left"),
+                    colalign=("left", "center", "left"),
                 ))
             else:
-                print(f"{Fore.YELLOW}No analyst signals available.{Style.RESET_ALL}")
-        else:
-            print(f"{Fore.YELLOW}No analyst signals available.{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}  No signals available for {agent_display_name}{Style.RESET_ALL}")
+            
+            print()  # Empty line between agents
     
     print("\n" + "=" * 80 + "\n")
