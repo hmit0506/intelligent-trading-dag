@@ -144,7 +144,7 @@ cp config.example.yaml config.yaml
 mode: backtest  # 或 "live"
 start_date: 2025-01-01
 end_date: 2025-02-01
-primary_interval: 1h  # 决策的主要间隔（必须在signals.intervals中）。LLM优先考虑此间隔的信号。
+primary_interval: 1h  # 决策的主要间隔。如果未在signals.intervals中列出，将自动添加。LLM优先考虑此间隔的信号。
 initial_cash: 100000
 margin_requirement: 0.0
 show_reasoning: false
@@ -177,7 +177,7 @@ sync_from_exchange: false  # 设置为true以从币安账户同步投资组合
 #       long: 2.0
 
 signals:
-  intervals: ["1h", "4h"]  # 要分析的所有间隔。上面的primary_interval应该在此列表中。
+  intervals: ["1h", "4h"]  # 要分析的所有间隔。如果primary_interval未列出，将自动包含。
   tickers: ["BTCUSDT", "ETHUSDT"]
   strategies: ["MacdStrategy", "RSIStrategy", "BollingerStrategy"]
 model:
@@ -471,7 +471,7 @@ python -m utils.file_manager --help
 - 策略文件应在 `strategies/` 目录中，类名匹配
 
 ### 配置错误
-- 确保 `primary_interval` 在 `signals.intervals` 列表中
+- `primary_interval` 如果未在 `signals.intervals` 中列出，将自动添加（无需手动配置）
 - `config.yaml` 和 `.env` 文件必须存在并正确配置
 
 ### 数据问题

@@ -146,7 +146,7 @@ Example `config.yaml`:
 mode: backtest  # or "live"
 start_date: 2025-01-01
 end_date: 2025-02-01
-primary_interval: 1h  # Primary interval for decision-making (must be in signals.intervals). LLM prioritizes signals from this interval.
+primary_interval: 1h  # Primary interval for decision-making. Automatically added to signals.intervals if not present. LLM prioritizes signals from this interval.
 initial_cash: 100000
 margin_requirement: 0.0
 show_reasoning: false
@@ -179,7 +179,7 @@ sync_from_exchange: false  # Set to true to sync portfolio from Binance account
 #       long: 2.0
 
 signals:
-  intervals: ["1h", "4h"]  # All intervals to analyze. The primary_interval above should be in this list.
+  intervals: ["1h", "4h"]  # All intervals to analyze. The primary_interval will be automatically included if not listed.
   tickers: ["BTCUSDT", "ETHUSDT"]
   strategies: ["MacdStrategy", "RSIStrategy", "BollingerStrategy"]
 model:
@@ -473,7 +473,7 @@ Both backtest and live modes use similar data fetching mechanisms:
 - Strategy files should be in `strategies/` directory with matching class names
 
 ### Configuration Errors
-- Ensure `primary_interval` is listed in `signals.intervals`
+- `primary_interval` will be automatically added to `signals.intervals` if not present (no manual configuration needed)
 - Both `config.yaml` and `.env` files must exist and be properly configured
 
 ### Data Issues

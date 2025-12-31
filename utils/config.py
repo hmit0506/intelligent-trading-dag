@@ -67,11 +67,20 @@ class Config(BaseSettings):
 
     @model_validator(mode='after')
     def validate_primary_interval(self):
-        """Ensure primary interval is in the intervals list."""
+        """Ensure primary interval is in the intervals list. Automatically add if missing."""
         if self.primary_interval not in self.signals.intervals:
-            raise ValueError(
-                f"primary_interval '{self.primary_interval}' must be in signals.intervals"
-            )
+            # Automatically add primary_interval to intervals list if not present
+            # This makes configuration more user-friendly - users don't need to manually
+            # ensure primary_interval is in the intervals list
+            self.signals.intervals.append(self.primary_interval)
+            # Remove duplicates while preserving order (in case intervals already had duplicates)
+            seen = set()
+            unique_intervals = []
+            for interval in self.signals.intervals:
+                if interval not in seen:
+                    seen.add(interval)
+                    unique_intervals.append(interval)
+            self.signals.intervals = unique_intervals
         return self
 
 

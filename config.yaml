@@ -5,7 +5,8 @@ mode: backtest  # Trading mode: "backtest" or "live"
 start_date: 2025-01-01
 end_date: 2025-01-02
 
-# Primary time interval for decision making (must be in signals.intervals)
+# Primary time interval for decision making
+# Note: This interval will be automatically added to signals.intervals if not already present
 primary_interval: 1h
 
 # Initial capital for trading
@@ -49,7 +50,8 @@ file_keep_latest: 10  # Always keep at least N latest files
 
 # Signal generation configuration
 signals:
-  intervals: ["1h", "4h"]  # Time intervals to analyze
+  # Time intervals to analyze (primary_interval will be automatically included if not listed)
+  intervals: ["1h", "4h"]
   tickers: ["BTCUSDT", "ETHUSDT"]  # Trading pairs to analyze
   strategies: ['MacdStrategy', 'RSIStrategy', 'BollingerStrategy']  # Trading strategies to use
 
