@@ -429,19 +429,32 @@ class Backtester:
                     
                     if "long" in position_data:
                         pos["long"] = float(position_data["long"])
-                        # Use provided cost basis or start_date price
-                        pos["long_cost_basis"] = float(position_data.get("long_cost_basis", start_prices.get(ticker, 0.0)))
+                        # Always use start_date price as cost basis (no manual cost basis allowed)
+                        # This ensures accurate evaluation of trading framework performance
+                        if ticker not in start_prices or start_prices[ticker] == 0:
+                            print(f"{Fore.YELLOW}Warning: Could not get price for {ticker} at start_date, skipping position{Style.RESET_ALL}")
+                            pos["long"] = 0.0
+                            continue
+                        pos["long_cost_basis"] = start_prices[ticker]
                         if pos["long"] > 0:
-                            print(f"  Initial position: {ticker} long {pos['long']:.4f} @ ${pos['long_cost_basis']:.2f}")
+                            # Initial positions are existing holdings, do NOT deduct from cash
+                            # Cash remains unchanged, positions are added as existing assets
+                            print(f"  Initial position: {ticker} long {pos['long']:.4f} @ ${pos['long_cost_basis']:.2f} (price at start_date)")
                     
                     if "short" in position_data:
                         pos["short"] = float(position_data["short"])
-                        pos["short_cost_basis"] = float(position_data.get("short_cost_basis", start_prices.get(ticker, 0.0)))
+                        # Always use start_date price as cost basis (no manual cost basis allowed)
+                        if ticker not in start_prices or start_prices[ticker] == 0:
+                            print(f"{Fore.YELLOW}Warning: Could not get price for {ticker} at start_date, skipping position{Style.RESET_ALL}")
+                            pos["short"] = 0.0
+                            continue
+                        pos["short_cost_basis"] = start_prices[ticker]
                         if pos["short"] > 0:
                             margin_required = pos["short"] * pos["short_cost_basis"] * self.portfolio["margin_requirement"]
                             pos["short_margin_used"] = margin_required
                             self.portfolio["margin_used"] += margin_required
-                            print(f"  Initial position: {ticker} short {pos['short']:.4f} @ ${pos['short_cost_basis']:.2f}")
+                            # For short positions, margin is reserved but cash is not deducted
+                            print(f"  Initial position: {ticker} short {pos['short']:.4f} @ ${pos['short_cost_basis']:.2f} (price at start_date, margin: ${margin_required:,.2f})")
             
             # Calculate initial portfolio value (for return calculation)
             self._calculate_initial_portfolio_value()

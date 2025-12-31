@@ -165,17 +165,15 @@ file_keep_latest: 10         # 至少保留N个最新文件
 sync_from_exchange: false  # 设置为true以从币安账户同步投资组合
 
 # 选项2：手动初始持仓（回测和实盘模式都支持）
+# 注意：成本基础自动使用历史/实时价格设置
 # initial_positions:
 #   cash: 100000  # 可选：覆盖initial_cash
 #   positions:
 #     BTCUSDT:
 #       long: 0.1  # 多头持仓数量
-#       long_cost_basis: 50000.0  # 平均成本（可选，回测模式使用start_date价格，实盘模式使用当前价格）
 #       short: 0.0  # 空头持仓数量
-#       short_cost_basis: 0.0  # 空头平均成本（可选）
 #     ETHUSDT:
 #       long: 2.0
-#       long_cost_basis: 3000.0
 
 signals:
   intervals: ["1h", "4h"]
@@ -257,14 +255,11 @@ python manage_output.py cleanup
 6. 自动导出结果到CSV和JSON文件
 7. 生成日志文件用于详细分析
 
-**增强功能**：
-- **历史数据预热**：自动在`start_date`之前获取额外的历史数据，确保技术指标从第一个数据点就有足够的数据
-- **初始持仓支持**：可以在`config.yaml`中配置现有持仓（多/空）来开始回测
-- **准确的收益率计算**：基于初始投资组合价值（包括按成本基础计算的初始持仓）计算收益率，而不仅仅是初始现金
-- 显示回测进度的进度条
-- 可配置的打印频率以减少I/O开销
-- 自动导出交易日志和性能数据
-- 生成日志文件用于调试
+**核心功能**：
+- 历史数据预热，确保技术指标从第一个数据点就准确
+- 初始持仓支持（成本基础自动从市场价格设置）
+- 基于初始投资组合价值的准确收益率计算
+- 进度跟踪、可配置输出和自动结果导出
 
 ### 实盘模式
 
@@ -285,14 +280,8 @@ python manage_output.py cleanup
 
 **投资组合初始化选项**：
 - **从交易所同步**：自动从币安获取当前余额和持仓（需要API密钥）
-- **手动配置**：在`config.yaml`中指定初始持仓及成本基础
+- **手动配置**：在`config.yaml`中指定初始持仓（成本基础自动从市场价格设置）
 - **仅现金**：仅使用初始现金开始（默认）
-
-**投资组合显示功能**：
-- 显示初始投资组合价值（包括按成本基础计算的初始持仓）
-- 基于初始投资组合价值计算总收益率，而不仅仅是初始现金
-- 显示持仓来源（初始配置、交易所同步或当前持仓）
-- 显示初始持仓的成本基础，以便准确跟踪盈亏
 
 **注意**：本系统仅生成信号，不执行实际交易。使用风险自负。
 
@@ -387,50 +376,11 @@ python -m utils.file_manager --help
 
 ## 配置选项
 
-### 投资组合初始化
+详细示例请参阅上方的配置部分。主要选项包括：
 
-回测和实盘模式都支持初始持仓：
-
-```yaml
-# 选项1：从交易所同步（仅实盘模式）
-sync_from_exchange: true  # 需要BINANCE_API_KEY和BINANCE_API_SECRET
-
-# 选项2：手动初始持仓（两种模式都支持）
-initial_positions:
-  cash: 100000  # 可选：覆盖initial_cash
-  positions:
-    BTCUSDT:
-      long: 0.5  # 多头持仓数量
-      long_cost_basis: 45000.0  # 平均成本（可选）
-      short: 0.0  # 空头持仓数量
-      short_cost_basis: 0.0  # 空头平均成本（可选）
-```
-
-**回测模式**：
-- 如果未指定`long_cost_basis`或`short_cost_basis`，使用`start_date`的价格
-- 允许使用现有持仓测试策略
-- 收益率计算使用初始投资组合价值（现金 + 按成本基础计算的持仓）作为基准
-
-**实盘模式**：
-- 如果`sync_from_exchange: true`，自动获取当前余额和持仓
-- 如果未指定`long_cost_basis`或`short_cost_basis`，使用当前市场价格
-- 如果同步失败，回退到`initial_positions`
-- 收益率计算使用初始投资组合价值（现金 + 按成本基础计算的持仓）作为基准
-
-### 性能和输出选项
-
-```yaml
-# 性能和输出选项
-print_frequency: 1        # 每N次迭代打印一次
-use_progress_bar: true    # 显示进度条
-enable_logging: true      # 生成日志文件
-save_decision_history: true  # 保存决策历史
-
-# 文件管理
-auto_cleanup_files: false     # 自动清理旧文件
-file_retention_days: 30      # 删除N天前的文件
-file_keep_latest: 10         # 至少保留N个最新文件
-```
+- **投资组合初始化**：从交易所同步或手动持仓（成本基础自动设置）
+- **性能选项**：打印频率、进度条、日志记录
+- **文件管理**：自动清理、保留策略
 
 ## 技术细节
 

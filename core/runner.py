@@ -205,6 +205,7 @@ class TradingSystemRunner:
     def _apply_initial_positions(self, portfolio: Dict[str, Any], initial_positions: Dict[str, Any]) -> Dict[str, Any]:
         """
         Apply manually configured initial positions to portfolio.
+        Cost basis is automatically set using historical/real-time prices.
         
         Args:
             portfolio: Current portfolio structure
@@ -215,8 +216,7 @@ class TradingSystemRunner:
                         "BTCUSDT": {
                             "long": float,  # Optional
                             "short": float,  # Optional
-                            "long_cost_basis": float,  # Optional, average cost
-                            "short_cost_basis": float,  # Optional, average cost
+                            # Note: cost_basis is automatically set, not configurable
                         },
                         ...
                     }
@@ -259,19 +259,33 @@ class TradingSystemRunner:
                 # Set long position
                 if "long" in position_data:
                     pos["long"] = float(position_data["long"])
-                    pos["long_cost_basis"] = float(position_data.get("long_cost_basis", current_prices.get(ticker, 0.0)))
+                    # Always use current market price as cost basis (no manual cost basis allowed)
+                    # This ensures accurate evaluation of trading framework performance
+                    if ticker not in current_prices or current_prices[ticker] == 0:
+                        print(f"{Fore.YELLOW}Warning: Could not get current price for {ticker}, skipping position{Style.RESET_ALL}")
+                        pos["long"] = 0.0
+                        continue
+                    pos["long_cost_basis"] = current_prices[ticker]
                     if pos["long"] > 0:
-                        print(f"  Initial position: {ticker} long {pos['long']:.4f} @ ${pos['long_cost_basis']:.2f}")
+                        # Initial positions are existing holdings, do NOT deduct from cash
+                        # Cash remains unchanged, positions are added as existing assets
+                        print(f"  Initial position: {ticker} long {pos['long']:.4f} @ ${pos['long_cost_basis']:.2f} (current market price)")
                 
                 # Set short position
                 if "short" in position_data:
                     pos["short"] = float(position_data["short"])
-                    pos["short_cost_basis"] = float(position_data.get("short_cost_basis", current_prices.get(ticker, 0.0)))
+                    # Always use current market price as cost basis (no manual cost basis allowed)
+                    if ticker not in current_prices or current_prices[ticker] == 0:
+                        print(f"{Fore.YELLOW}Warning: Could not get current price for {ticker}, skipping position{Style.RESET_ALL}")
+                        pos["short"] = 0.0
+                        continue
+                    pos["short_cost_basis"] = current_prices[ticker]
                     if pos["short"] > 0:
                         margin_required = pos["short"] * pos["short_cost_basis"] * portfolio["margin_requirement"]
                         pos["short_margin_used"] = margin_required
                         portfolio["margin_used"] += margin_required
-                        print(f"  Initial position: {ticker} short {pos['short']:.4f} @ ${pos['short_cost_basis']:.2f}")
+                        # For short positions, margin is reserved but cash is not deducted
+                        print(f"  Initial position: {ticker} short {pos['short']:.4f} @ ${pos['short_cost_basis']:.2f} (current market price, margin: ${margin_required:,.2f})")
         
         return portfolio
     

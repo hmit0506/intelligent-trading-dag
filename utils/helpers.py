@@ -173,8 +173,11 @@ def print_backtest_results(table_rows: List[List[Any]], clear_screen: bool = Fal
                   f"Positions: {Fore.YELLOW}${float(position_str):,.2f}{Style.RESET_ALL} | "
                   f"Total: {Fore.WHITE}${float(total_str):,.2f}{Style.RESET_ALL}")
 
-        if latest_summary[10] and latest_summary[11] and latest_summary[12]:
-            print(f"Sharpe Ratio: {latest_summary[10]} | Sortino Ratio: {latest_summary[11]} | Max Drawdown: {latest_summary[12]}")
+        # Always show metrics row, even if values are not yet calculated (will show empty or N/A)
+        sharpe_str = latest_summary[10] if len(latest_summary) > 10 and latest_summary[10] else "N/A"
+        sortino_str = latest_summary[11] if len(latest_summary) > 11 and latest_summary[11] else "N/A"
+        drawdown_str = latest_summary[12] if len(latest_summary) > 12 and latest_summary[12] else "N/A"
+        print(f"Sharpe Ratio: {sharpe_str} | Sortino Ratio: {sortino_str} | Max Drawdown: {drawdown_str}")
 
     # Use simpler table format for better performance
     if ticker_rows:

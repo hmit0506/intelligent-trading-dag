@@ -167,17 +167,15 @@ file_keep_latest: 10         # Always keep at least N latest files
 sync_from_exchange: false  # Set to true to sync portfolio from Binance account
 
 # Option 2: Manual initial positions (works for both live and backtest modes)
+# Note: Cost basis is automatically set using historical/real-time prices
 # initial_positions:
 #   cash: 100000  # Optional: override initial_cash
 #   positions:
 #     BTCUSDT:
 #       long: 0.1  # Long position quantity
-#       long_cost_basis: 50000.0  # Average cost per unit (optional, uses start_date price in backtest or current price in live)
 #       short: 0.0  # Short position quantity
-#       short_cost_basis: 0.0  # Average cost per unit for short (optional)
 #     ETHUSDT:
 #       long: 2.0
-#       long_cost_basis: 3000.0
 
 signals:
   intervals: ["1h", "4h"]
@@ -259,14 +257,11 @@ Backtest mode will:
 6. Export results to CSV and JSON files automatically
 7. Generate log files for detailed analysis
 
-**Enhanced Features**:
-- **Historical Data Warmup**: Automatically fetches additional historical data before `start_date` to ensure technical indicators have sufficient data from the first data point
-- **Initial Positions Support**: Can start backtest with existing positions (long/short) configured in `config.yaml`
-- **Accurate Return Calculation**: Calculates returns based on initial portfolio value (including initial positions at cost basis), not just initial cash
-- Progress bar showing backtest progress
-- Configurable print frequency to reduce I/O overhead
-- Automatic export of trade logs and performance data
-- Log file generation for debugging
+**Key Features**:
+- Historical data warmup for accurate technical indicators from the first data point
+- Initial positions support (cost basis auto-set from market prices)
+- Accurate return calculation based on initial portfolio value
+- Progress tracking, configurable output, and automatic result export
 
 ### Live Mode
 
@@ -287,14 +282,8 @@ Live mode will:
 
 **Portfolio Initialization Options**:
 - **Sync from Exchange**: Automatically fetch current balances and positions from Binance (requires API keys)
-- **Manual Configuration**: Specify initial positions in `config.yaml` with cost basis
+- **Manual Configuration**: Specify initial positions in `config.yaml` (cost basis auto-set from market prices)
 - **Cash Only**: Start with initial cash only (default)
-
-**Portfolio Display Features**:
-- Shows initial portfolio value (including initial positions at cost basis)
-- Calculates total return based on initial portfolio value, not just initial cash
-- Displays position source (initial from config, synced from exchange, or current)
-- Shows cost basis for initial positions to track P&L accurately
 
 **Note**: This system generates signals but does NOT execute real trades. Use at your own risk.
 
@@ -389,50 +378,11 @@ See [FILE_MANAGEMENT.md](FILE_MANAGEMENT.md) for detailed file management docume
 
 ## Configuration Options
 
-### Portfolio Initialization
+See the Configuration section above for detailed examples. Key options include:
 
-Both live and backtest modes support initial positions:
-
-```yaml
-# Option 1: Sync from exchange (live mode only)
-sync_from_exchange: true  # Requires BINANCE_API_KEY and BINANCE_API_SECRET
-
-# Option 2: Manual initial positions (both modes)
-initial_positions:
-  cash: 100000  # Optional: override initial_cash
-  positions:
-    BTCUSDT:
-      long: 0.5  # Long position quantity
-      long_cost_basis: 45000.0  # Average cost (optional)
-      short: 0.0  # Short position quantity
-      short_cost_basis: 0.0  # Average cost for short (optional)
-```
-
-**For Backtest Mode**:
-- If `long_cost_basis` or `short_cost_basis` is not specified, uses price at `start_date`
-- Allows testing strategies with existing positions
-- Return calculation uses initial portfolio value (cash + positions at cost basis) as baseline
-
-**For Live Mode**:
-- If `sync_from_exchange: true`, automatically fetches current balances and positions
-- If `long_cost_basis` or `short_cost_basis` is not specified, uses current market price
-- Falls back to `initial_positions` if sync fails
-- Return calculation uses initial portfolio value (cash + positions at cost basis) as baseline
-
-### Performance and Output Options
-
-```yaml
-# Performance and output options
-print_frequency: 1        # Print every N iterations
-use_progress_bar: true    # Show progress bar
-enable_logging: true      # Generate log files
-save_decision_history: true  # Save decision history
-
-# File management
-auto_cleanup_files: false     # Auto-cleanup old files
-file_retention_days: 30      # Delete files older than N days
-file_keep_latest: 10         # Keep at least N latest files
-```
+- **Portfolio Initialization**: Sync from exchange or manual positions (cost basis auto-set)
+- **Performance Options**: Print frequency, progress bar, logging
+- **File Management**: Auto-cleanup, retention policies
 
 ## Technical Details
 
