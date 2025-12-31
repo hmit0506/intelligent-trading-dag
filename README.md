@@ -11,7 +11,8 @@ This system employs LangGraph to create a flexible workflow where market data fl
 - **Modular DAG Architecture**: Clean separation of concerns with specialized nodes for data fetching, signal generation, risk management, and portfolio management
 - **Multi-Strategy Support**: Combines multiple trading strategies (MACD, RSI, Bollinger Bands) with weighted signal fusion
 - **Multi-Timeframe Analysis**: Simultaneously analyzes multiple time intervals (1m, 5m, 1h, 4h, etc.) for robust signal generation
-- **AI-Enhanced Decision Making**: Uses LLMs (OpenAI, Groq, Anthropic, Ollama, etc.) for sophisticated portfolio management decisions
+- **Primary Interval Priority**: LLM decision-making prioritizes signals from the primary interval while considering other intervals as supplementary information
+- **AI-Enhanced Decision Making**: Uses LLMs (OpenAI, Groq, Anthropic, Ollama, etc.) for sophisticated portfolio management decisions with explicit interval weighting guidance
 - **Comprehensive Backtesting**: Robust historical performance evaluation with detailed metrics and visualizations
 - **Historical Data Warmup**: Automatically fetches additional historical data before backtest start date to ensure technical indicators work correctly from the first data point
 - **Initial Positions Support**: Both live and backtest modes support starting with existing positions (long/short), not just cash
@@ -145,7 +146,7 @@ Example `config.yaml`:
 mode: backtest  # or "live"
 start_date: 2025-01-01
 end_date: 2025-02-01
-primary_interval: 1h
+primary_interval: 1h  # Primary interval for decision-making (must be in signals.intervals). LLM prioritizes signals from this interval.
 initial_cash: 100000
 margin_requirement: 0.0
 show_reasoning: false
@@ -178,7 +179,7 @@ sync_from_exchange: false  # Set to true to sync portfolio from Binance account
 #       long: 2.0
 
 signals:
-  intervals: ["1h", "4h"]
+  intervals: ["1h", "4h"]  # All intervals to analyze. The primary_interval above should be in this list.
   tickers: ["BTCUSDT", "ETHUSDT"]
   strategies: ["MacdStrategy", "RSIStrategy", "BollingerStrategy"]
 model:
@@ -413,8 +414,38 @@ See the Configuration section above for detailed examples. Key options include:
 Each strategy:
 - Receives historical data sequences (not single data points) for technical indicator calculations
 - Analyzes all configured tickers and intervals in parallel
-- Generates signals with confidence scores (0-100%)
-- Signals are aggregated and used by PortfolioManagementNode for final decisions
+- Generates signals with confidence scores (0-100%) for each interval
+- Signals are organized by ticker → agent → interval → signal/confidence
+- All interval signals are provided to PortfolioManagementNode for comprehensive analysis
+
+### Interval Weighting and Primary Interval Priority
+
+The system uses an intelligent interval weighting mechanism:
+
+**Primary Interval Priority**:
+- The `primary_interval` specified in `config.yaml` is given **HIGHEST PRIORITY** in LLM decision-making
+- When signals from different intervals conflict, the primary interval signal takes precedence
+- Primary interval signals serve as the primary basis for trading decisions
+
+**Other Intervals**:
+- Signals from other intervals (non-primary) are used as supplementary information
+- They help confirm or contradict primary interval signals
+- Higher confidence signals from other intervals are given more consideration
+- If all intervals agree (same direction), confidence in the decision increases
+
+**Signal Confidence Levels**:
+- **STRONG**: Confidence > 70% - Highly influential signals
+- **MODERATE**: Confidence 50-70% - Moderate influence
+- **WEAK**: Confidence < 50% - Lower influence
+
+**LLM Decision Process**:
+1. Starts by analyzing PRIMARY INTERVAL signals for each strategy
+2. Checks if other intervals confirm or contradict primary interval signals
+3. If all intervals agree, increases confidence in the decision
+4. If intervals conflict, prioritizes PRIMARY INTERVAL but considers the strength of conflicting signals
+5. Combines signals from multiple strategies, weighting by confidence levels
+
+This ensures that the LLM makes informed decisions by considering all available interval signals while respecting the primary interval's priority.
 
 ### Historical Data Fetching
 

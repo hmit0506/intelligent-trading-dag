@@ -1,5 +1,5 @@
 # Configuration File
-mode: live  # Trading mode: "backtest" or "live"
+mode: backtest  # Trading mode: "backtest" or "live"
 
 # Date range for backtesting (only used in backtest mode)
 start_date: 2025-01-01

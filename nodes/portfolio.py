@@ -64,6 +64,8 @@ class PortfolioManagementNode(BaseNode):
         future_timepoints = data.get("future_timepoints", None)
         intervals = data.get("intervals", [])
         interval_strings = [interval.value if hasattr(interval, 'value') else str(interval) for interval in intervals] if intervals else None
+        primary_interval = data.get("primary_interval")
+        primary_interval_str = primary_interval.value if primary_interval and hasattr(primary_interval, 'value') else (str(primary_interval) if primary_interval else None)
         
         # Generate the trading decision
         result = generate_trading_decision(
@@ -78,6 +80,7 @@ class PortfolioManagementNode(BaseNode):
             model_base_url=state["metadata"]["model_base_url"],
             future_timepoints=future_timepoints,
             intervals=interval_strings,
+            primary_interval=primary_interval_str,
         )
 
         message = HumanMessage(
@@ -105,7 +108,8 @@ def generate_trading_decision(
     model_provider: str,
     model_base_url: Optional[str] = None,
     future_timepoints: Optional[Dict[str, Dict[str, float]]] = None,
-    intervals: Optional[List[str]] = None
+    intervals: Optional[List[str]] = None,
+    primary_interval: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Generate trading decisions using LLM.
@@ -163,8 +167,18 @@ def generate_trading_decision(
             - "cover": Close or reduce short position
             - "hold": No action
             
+            Signal Analysis Guidelines:
+            - Each strategy agent provides signals for multiple time intervals (e.g., "1h", "4h", "1d")
+            - Signals are organized by ticker → agent → interval → signal/confidence
+            - You will see signals from ALL intervals for each strategy
+            - PRIMARY INTERVAL: {primary_interval_info}
+            - When multiple intervals show conflicting signals, prioritize the PRIMARY INTERVAL signal
+            - Consider signals from other intervals as supplementary information
+            - Higher confidence signals (closer to 100%) should be given more weight
+            - Combine signals from different strategies and intervals to form a comprehensive view
+            
             Inputs:
-            - signals_by_ticker: dictionary of ticker → signals from various analyst agents
+            - signals_by_ticker: dictionary of ticker → signals from various analyst agents (organized by interval)
             - max_shares: maximum shares allowed per ticker based on overall position limits
             - suggested_quantities: quantities suggested by the risk management node
             - portfolio_cash: current cash in portfolio
@@ -180,6 +194,8 @@ def generate_trading_decision(
             
             Here are the aggregated signals from various strategies by ticker:
             {signals_by_ticker}
+            
+            {interval_weighting_info}
             
             Current Prices (Now):
             {current_prices}
@@ -225,6 +241,66 @@ def generate_trading_decision(
         ),
     ])
 
+    # Prepare primary interval information
+    if primary_interval:
+        primary_interval_info = f"The PRIMARY INTERVAL is '{primary_interval}'. This interval should be given HIGHEST PRIORITY when analyzing signals. If signals from different intervals conflict, prioritize the '{primary_interval}' interval signals."
+    else:
+        primary_interval_info = "No primary interval specified. All intervals should be considered with equal weight."
+    
+    # Prepare interval weighting information for the prompt
+    if intervals and primary_interval:
+        interval_list = ", ".join(intervals)
+        interval_weighting_info = f"""
+=== INTERVAL WEIGHTING GUIDELINES ===
+Available Intervals: {interval_list}
+Primary Interval: {primary_interval} (HIGHEST PRIORITY)
+
+Weighting Strategy:
+1. PRIMARY INTERVAL ({primary_interval}): Give this interval the HIGHEST WEIGHT in your decision-making
+   - If primary interval signals are strong (confidence > 60%), they should heavily influence your decision
+   - Use primary interval signals as the primary basis for trading decisions
+   
+2. Other Intervals ({', '.join([i for i in intervals if i != primary_interval])}): Use as supplementary information
+   - Consider these signals to confirm or contradict primary interval signals
+   - If other intervals strongly contradict primary interval (e.g., primary is bullish but others are bearish with high confidence), exercise caution
+   - Higher confidence signals from other intervals should be given more consideration
+   
+3. Signal Confidence:
+   - Signals with confidence > 70% are considered STRONG
+   - Signals with confidence 50-70% are considered MODERATE
+   - Signals with confidence < 50% are considered WEAK
+   - When combining signals, weight them by their confidence levels
+
+Decision Making Process:
+- Start by analyzing the PRIMARY INTERVAL signals for each strategy
+- Check if other intervals confirm or contradict the primary interval signals
+- If all intervals agree (same direction), increase your confidence in the decision
+- If intervals conflict, prioritize PRIMARY INTERVAL but consider the strength of conflicting signals
+- Combine signals from multiple strategies, giving more weight to strategies with higher confidence
+=== END OF INTERVAL WEIGHTING GUIDELINES ===
+"""
+    elif intervals:
+        interval_list = ", ".join(intervals)
+        interval_weighting_info = f"""
+=== INTERVAL WEIGHTING GUIDELINES ===
+Available Intervals: {interval_list}
+No Primary Interval Specified: All intervals should be considered with equal weight.
+
+Weighting Strategy:
+- All intervals ({interval_list}) should be given equal consideration
+- Look for consensus across intervals - if multiple intervals show the same signal direction, increase confidence
+- If intervals conflict, consider the confidence levels of each signal
+- Higher confidence signals should be given more weight regardless of interval
+
+Signal Confidence:
+- Signals with confidence > 70% are considered STRONG
+- Signals with confidence 50-70% are considered MODERATE
+- Signals with confidence < 50% are considered WEAK
+=== END OF INTERVAL WEIGHTING GUIDELINES ===
+"""
+    else:
+        interval_weighting_info = ""
+    
     # Prepare future analysis section and timepoint instructions
     future_analysis_section = ""
     available_timepoints = ["now"]  # Always include "now"
@@ -319,6 +395,8 @@ For EACH timepoint, you need to:
         "timepoint_instructions": timepoint_instructions,
         "future_timepoint_structure": future_timepoint_structure,
         "future_timepoint_important": future_timepoint_important,
+        "primary_interval_info": primary_interval_info,
+        "interval_weighting_info": interval_weighting_info,
     })
     
     return result
