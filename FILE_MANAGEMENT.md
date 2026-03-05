@@ -25,16 +25,16 @@ This guide explains how to manage and clean up these files using the built-in fi
 
 ### Method 1: Simple Commands (Recommended for Beginners)
 
-Use `manage_output.py` for quick and easy file management:
+Use `trading_dag.cli.manage_output` for quick and easy file management:
 
 #### View Files
 
 ```bash
 # List all files
-uv run python manage_output.py list
+python -m trading_dag.cli.manage_output list
 
 # Show summary statistics
-uv run python manage_output.py summary
+python -m trading_dag.cli.manage_output summary
 ```
 
 **Output Example:**
@@ -54,61 +54,61 @@ By Type:
 
 ```bash
 # Clean up old files (keeps latest 10, deletes >30 days)
-uv run python manage_output.py cleanup
+python -m trading_dag.cli.manage_output cleanup
 
 # Delete all log files
-uv run python manage_output.py delete-logs
+python -m trading_dag.cli.manage_output delete-logs
 
 # Delete all JSON files
-uv run python manage_output.py delete-json
+python -m trading_dag.cli.manage_output delete-json
 
 # Delete all CSV files
-uv run python manage_output.py delete-csv
+python -m trading_dag.cli.manage_output delete-csv
 
 # Delete ALL files (use with caution!)
-uv run python manage_output.py delete-all
+python -m trading_dag.cli.manage_output delete-all
 ```
 
 ### Method 2: Advanced Commands (Full Control)
 
-Use `utils.file_manager` module for advanced options:
+Use `trading_dag.utils.file_manager` module for advanced options:
 
 #### List Files
 
 ```bash
 # List all files
-uv run python -m utils.file_manager --list
+python -m trading_dag.utils.file_manager --list
 
 # List only JSON files
-uv run python -m utils.file_manager --list --type json
+python -m trading_dag.utils.file_manager --list --type json
 
 # List only CSV files
-uv run python -m utils.file_manager --list --type csv
+python -m trading_dag.utils.file_manager --list --type csv
 
 # List only log files
-uv run python -m utils.file_manager --list --type log
+python -m trading_dag.utils.file_manager --list --type log
 ```
 
 #### View Summary
 
 ```bash
-uv run python -m utils.file_manager --summary
+python -m trading_dag.utils.file_manager --summary
 ```
 
 #### Delete Files with Conditions
 
 ```bash
 # Delete files older than 7 days
-uv run python -m utils.file_manager --delete-older-than 7
+python -m trading_dag.utils.file_manager --delete-older-than 7
 
 # Keep only the 5 latest files (delete the rest)
-uv run python -m utils.file_manager --keep-latest 5
+python -m trading_dag.utils.file_manager --keep-latest 5
 
 # Keep only the 10 latest JSON files
-uv run python -m utils.file_manager --keep-latest 10 --type json
+python -m trading_dag.utils.file_manager --keep-latest 10 --type json
 
 # Delete all JSON files
-uv run python -m utils.file_manager --delete-type json
+python -m trading_dag.utils.file_manager --delete-type json
 ```
 
 #### Safe Preview (Dry Run)
@@ -117,13 +117,13 @@ Always preview before deleting:
 
 ```bash
 # Preview what would be deleted
-uv run python -m utils.file_manager --cleanup --dry-run
+python -m trading_dag.utils.file_manager --cleanup --dry-run
 
 # Preview keeping only latest 5 files
-uv run python -m utils.file_manager --keep-latest 5 --dry-run
+python -m trading_dag.utils.file_manager --keep-latest 5 --dry-run
 
 # Preview deleting files older than 7 days
-uv run python -m utils.file_manager --delete-older-than 7 --dry-run
+python -m trading_dag.utils.file_manager --delete-older-than 7 --dry-run
 ```
 
 ## Common Use Cases
@@ -132,17 +132,17 @@ uv run python -m utils.file_manager --delete-older-than 7 --dry-run
 
 ```bash
 # Quick summary
-uv run python manage_output.py summary
+python -m trading_dag.cli.manage_output summary
 
 # Detailed list
-uv run python manage_output.py list
+python -m trading_dag.cli.manage_output list
 ```
 
 ### Use Case 2: Clean Up Old Files
 
 ```bash
 # Automatic cleanup (recommended)
-uv run python manage_output.py cleanup
+python -m trading_dag.cli.manage_output cleanup
 ```
 
 This will:
@@ -154,35 +154,35 @@ This will:
 
 ```bash
 # Keep only the 5 most recent files
-uv run python -m utils.file_manager --keep-latest 5
+python -m trading_dag.utils.file_manager --keep-latest 5
 ```
 
 ### Use Case 4: Delete Specific File Types
 
 ```bash
 # Delete all log files (they're usually large)
-uv run python manage_output.py delete-logs
+python -m trading_dag.cli.manage_output delete-logs
 
 # Delete all JSON files
-uv run python manage_output.py delete-json
+python -m trading_dag.cli.manage_output delete-json
 
 # Delete all CSV files
-uv run python manage_output.py delete-csv
+python -m trading_dag.cli.manage_output delete-csv
 ```
 
 ### Use Case 5: Delete Old Files
 
 ```bash
 # Delete files older than 7 days
-uv run python -m utils.file_manager --delete-older-than 7
+python -m trading_dag.utils.file_manager --delete-older-than 7
 
 # Preview first (recommended)
-uv run python -m utils.file_manager --delete-older-than 7 --dry-run
+python -m trading_dag.utils.file_manager --delete-older-than 7 --dry-run
 ```
 
 ## Configuration-Based Auto-Cleanup
 
-You can enable automatic file cleanup in `config.yaml`:
+You can enable automatic file cleanup in `config/config.yaml`:
 
 ```yaml
 # File management options
@@ -198,7 +198,7 @@ When enabled, the system will automatically clean up old files before each run.
 You can also use the file manager programmatically:
 
 ```python
-from utils.file_manager import OutputFileManager
+from trading_dag.utils.file_manager import OutputFileManager
 
 # Initialize manager
 manager = OutputFileManager("output")
@@ -246,10 +246,10 @@ Examples:
 
 1. **Always Preview First**: Use `--dry-run` before deleting
    ```bash
-   uv run python -m utils.file_manager --cleanup --dry-run
+   python -m trading_dag.utils.file_manager --cleanup --dry-run
    ```
 
-2. **Regular Cleanup**: Set up automatic cleanup in `config.yaml`
+2. **Regular Cleanup**: Set up automatic cleanup in `config/config.yaml`
    ```yaml
    auto_cleanup_files: true
    file_retention_days: 30
@@ -258,7 +258,7 @@ Examples:
 
 3. **Check Before Deleting**: Always check what files exist first
    ```bash
-   uv run python manage_output.py summary
+   python -m trading_dag.cli.manage_output summary
    ```
 
 4. **Keep Important Data**: Export important results before cleanup
@@ -268,7 +268,7 @@ Examples:
 
 5. **Use Type-Specific Deletion**: Delete by type when you know what you want
    ```bash
-   uv run python manage_output.py delete-logs  # Only logs
+   python -m trading_dag.cli.manage_output delete-logs  # Only logs
    ```
 
 ## Examples
@@ -280,50 +280,50 @@ Examples:
 # daily_cleanup.sh
 
 echo "Cleaning up old output files..."
-uv run python manage_output.py cleanup
+python -m trading_dag.cli.manage_output cleanup
 
 echo "Current files:"
-uv run python manage_output.py summary
+python -m trading_dag.cli.manage_output summary
 ```
 
 ### Example 2: Keep Only Latest 5 Files
 
 ```bash
 # Preview first
-uv run python -m utils.file_manager --keep-latest 5 --dry-run
+python -m trading_dag.utils.file_manager --keep-latest 5 --dry-run
 
 # Actually delete
-uv run python -m utils.file_manager --keep-latest 5
+python -m trading_dag.utils.file_manager --keep-latest 5
 ```
 
 ### Example 3: Archive Old Files Before Cleanup
 
 ```bash
 # 1. Check current files
-uv run python manage_output.py summary
+python -m trading_dag.cli.manage_output summary
 
 # 2. Archive important files (manual step)
 mkdir -p archive/$(date +%Y%m%d)
 cp output/*.json archive/$(date +%Y%m%d)/
 
 # 3. Clean up
-uv run python manage_output.py cleanup
+python -m trading_dag.cli.manage_output cleanup
 ```
 
 ### Example 4: Full Cleanup Workflow
 
 ```bash
 # 1. View current files
-uv run python manage_output.py summary
+python -m trading_dag.cli.manage_output summary
 
 # 2. Preview what would be deleted
-uv run python -m utils.file_manager --cleanup --dry-run
+python -m trading_dag.utils.file_manager --cleanup --dry-run
 
 # 3. Actually clean up
-uv run python manage_output.py cleanup
+python -m trading_dag.cli.manage_output cleanup
 
 # 4. Verify cleanup
-uv run python manage_output.py summary
+python -m trading_dag.cli.manage_output summary
 ```
 
 ## Quick Reference
@@ -332,13 +332,13 @@ uv run python manage_output.py summary
 
 | Command | Description |
 |---------|-------------|
-| `manage_output.py list` | List all files |
-| `manage_output.py summary` | Show statistics |
-| `manage_output.py cleanup` | Auto cleanup |
-| `manage_output.py delete-logs` | Delete log files |
-| `manage_output.py delete-json` | Delete JSON files |
-| `manage_output.py delete-csv` | Delete CSV files |
-| `manage_output.py delete-all` | Delete everything |
+| `python -m trading_dag.cli.manage_output list` | List all files |
+| `python -m trading_dag.cli.manage_output summary` | Show statistics |
+| `python -m trading_dag.cli.manage_output cleanup` | Auto cleanup |
+| `python -m trading_dag.cli.manage_output delete-logs` | Delete log files |
+| `python -m trading_dag.cli.manage_output delete-json` | Delete JSON files |
+| `python -m trading_dag.cli.manage_output delete-csv` | Delete CSV files |
+| `python -m trading_dag.cli.manage_output delete-all` | Delete everything |
 
 ### Advanced Options
 
@@ -364,7 +364,7 @@ If files are not found, check:
 ls -la output/
 
 # List files with detailed info
-uv run python manage_output.py list
+python -m trading_dag.cli.manage_output list
 ```
 
 ### Permission Errors
@@ -379,7 +379,7 @@ If you get permission errors:
 ls -la output/
 
 # Try with explicit path
-uv run python -m utils.file_manager --output-dir output --list
+python -m trading_dag.utils.file_manager --output-dir output --list
 ```
 
 ### Large File Sizes
@@ -391,10 +391,10 @@ If files are very large:
 
 ```bash
 # Check which files are large
-uv run python manage_output.py summary
+python -m trading_dag.cli.manage_output summary
 
 # Delete old large files
-uv run python -m utils.file_manager --delete-older-than 7
+python -m trading_dag.utils.file_manager --delete-older-than 7
 ```
 
 ## See Also

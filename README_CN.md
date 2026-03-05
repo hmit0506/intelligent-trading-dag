@@ -39,25 +39,24 @@
 
 ```
 .
-├── gateway/           # 币安API客户端（独立）
-├── core/              # 核心框架（状态、节点、工作流、运行器）
-│   ├── node.py        # 基础节点类
-│   ├── state.py       # Agent状态管理
-│   ├── workflow.py    # 工作流创建
-│   └── runner.py      # 统一交易系统运行器
-├── nodes/             # 工作流节点
-├── strategies/        # 交易策略
-├── backtest/          # 回测引擎
-├── data/              # 数据提供者（币安）
-├── indicators/        # 技术指标
-├── llm/               # LLM集成
-├── utils/             # 工具和配置
-│   └── file_manager.py  # 输出文件管理工具
-├── main.py            # 统一入口（支持两种模式）
-├── backtest.py        # 回测入口（兼容旧版本，使用统一运行器）
-├── manage_output.py   # 文件管理便捷脚本
-├── config.yaml        # 配置文件
-└── output/            # 输出目录（日志、JSON、CSV文件）
+├── src/trading_dag/   # 主包（Python友好的下划线命名）
+│   ├── cli/           # CLI入口（main, backtest, manage_output）
+│   ├── core/          # 状态、节点、工作流、运行器
+│   ├── nodes/         # 工作流节点
+│   ├── strategies/    # 交易策略
+│   ├── backtest/      # 回测引擎
+│   ├── data/          # 数据提供者（币安）
+│   ├── gateway/       # 币安API客户端
+│   ├── indicators/    # 技术指标
+│   ├── llm/           # LLM集成
+│   └── utils/         # 配置和工具
+├── config/            # 配置文件
+│   ├── config.yaml    # 主配置（从 config.example.yaml 复制）
+│   └── config.example.yaml
+├── tests/             # 单元和集成测试
+├── output/            # 生成的文件（日志、JSON、CSV）
+├── run.py             # 便捷启动脚本
+└── pyproject.toml     # 包配置和依赖
 ```
 
 **注意**：本项目完全独立，不需要原始项目目录。
@@ -106,8 +105,8 @@ pip install -r requirements.txt
 
 3. 配置环境变量：
 ```bash
-cp env.example .env
-# 编辑.env文件，填入你的API密钥
+cp .env.example .env
+# 编辑 .env 文件，填入你的API密钥
 ```
 
 必需的环境变量：
@@ -130,11 +129,11 @@ GROQ_API_KEY=your-groq-key      # 如果使用Groq
 
 4. 配置系统：
 ```bash
-cp config.example.yaml config.yaml
-# 编辑config.yaml设置你的参数
+cp config/config.example.yaml config/config.yaml
+# 编辑 config/config.yaml 设置你的参数
 ```
 
-**注意**：`config.yaml` 和 `.env` 文件都是系统运行所必需的。
+**注意**：`config/config.yaml` 和 `.env` 文件都是系统运行所必需的。
 
 ## 配置
 
@@ -202,9 +201,9 @@ model:
 
 1. **运行系统**（模式由 `config.yaml` 决定）：
 ```bash
-uv run main.py
+uv run python run.py
 # 或
-python main.py
+python run.py
 ```
 
 系统会自动根据 `config.yaml` 检测模式：
@@ -214,14 +213,14 @@ python main.py
 2. **运行特定模式**：
 ```bash
 # 回测模式
-uv run backtest.py
+uv run python run.py --backtest
 # 或
-python backtest.py
+python run.py --backtest
 
 # 实盘模式
-uv run main.py  # （在config.yaml中设置 mode: live）
+uv run python run.py  # （在config.yaml中设置 mode: live）
 # 或
-python main.py
+python run.py
 ```
 
 ### 输出文件
@@ -234,13 +233,13 @@ python main.py
 管理输出文件：
 ```bash
 # 列出所有输出文件
-python manage_output.py list
+python -m trading_dag.cli.manage_output list
 
 # 显示摘要
-python manage_output.py summary
+python -m trading_dag.cli.manage_output summary
 
 # 清理旧文件
-python manage_output.py cleanup
+python -m trading_dag.cli.manage_output cleanup
 
 # 详细用法请参阅 [FILE_MANAGEMENT_CN.md](FILE_MANAGEMENT_CN.md)
 ```
@@ -278,18 +277,18 @@ python manage_output.py cleanup
 
 **投资组合初始化选项**：
 - **从交易所同步**：自动从币安获取当前余额和持仓（需要API密钥）
-- **手动配置**：在`config.yaml`中指定初始持仓（成本基础自动从市场价格设置）
+- **手动配置**：在 `config/config.yaml` 中指定初始持仓（成本基础自动从市场价格设置）
 - **仅现金**：仅使用初始现金开始（默认）
 
 **注意**：本系统仅生成信号，不执行实际交易。使用风险自负。
 
 ## 添加新策略
 
-1. 在 `strategies/` 目录创建新的策略文件：
+1. 在 `src/trading_dag/strategies/` 目录创建新的策略文件：
 
 ```python
-from core.node import BaseNode
-from core.state import AgentState
+from trading_dag.core.node import BaseNode
+from trading_dag.core.state import AgentState
 from typing import Dict, Any
 import json
 from langchain_core.messages import HumanMessage
@@ -315,8 +314,8 @@ class MyStrategy(BaseNode):
         }
 ```
 
-2. 在 `strategies/__init__.py` 中注册
-3. 在 `config.yaml` 的 `signals.strategies` 中添加
+2. 在 `src/trading_dag/strategies/__init__.py` 中注册
+3. 在 `config/config.yaml` 的 `signals.strategies` 中添加
 
 ## 支持的LLM提供商
 
@@ -362,12 +361,12 @@ class MyStrategy(BaseNode):
 
 ```bash
 # 快速命令
-python manage_output.py list      # 列出所有文件
-python manage_output.py summary  # 显示统计信息
-python manage_output.py cleanup  # 清理旧文件
+python -m trading_dag.cli.manage_output list      # 列出所有文件
+python -m trading_dag.cli.manage_output summary  # 显示统计信息
+python -m trading_dag.cli.manage_output cleanup  # 清理旧文件
 
 # 高级用法
-python -m utils.file_manager --help
+python -m trading_dag.utils.file_manager --help
 ```
 
 详细文档请参阅 [FILE_MANAGEMENT_CN.md](FILE_MANAGEMENT_CN.md)。
@@ -464,15 +463,15 @@ python -m utils.file_manager --help
 ### API认证错误
 - 检查 `.env` 文件中的API密钥是否正确（不是占位符值）
 - 对于OpenAI兼容的API（DeepSeek等），确保设置了 `OPENAI_API_KEY`
-- 验证 `config.yaml` 中的 `base_url` 与你的提供商匹配
+- 验证 `config/config.yaml` 中的 `base_url` 与你的提供商匹配
 
 ### 策略加载错误
-- 确保 `config.yaml` 中的策略名称与类名完全匹配（区分大小写）
-- 策略文件应在 `strategies/` 目录中，类名匹配
+- 确保 `config/config.yaml` 中的策略名称与类名完全匹配（区分大小写）
+- 策略文件应在 `src/trading_dag/strategies/` 目录中，类名匹配
 
 ### 配置错误
 - `primary_interval` 如果未在 `signals.intervals` 中列出，将自动添加（无需手动配置）
-- `config.yaml` 和 `.env` 文件必须存在并正确配置
+- `config/config.yaml` 和 `.env` 文件必须存在并正确配置
 
 ### 数据问题
 - 如果回测显示数据不足，请检查 `start_date` 和 `end_date` 是否有效

@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "intelligent-trading-dag"
 version = "0.1.0"
@@ -33,5 +37,10 @@ dependencies = [
     "langchain-ollama>=0.3.3",
 ]
 
-#[tool.setuptools]
-#packages = ["src"]
+[project.scripts]
+trading-dag = "trading_dag.cli.main:main"
+trading-dag-backtest = "trading_dag.cli.backtest:main"
+trading-dag-manage-output = "trading_dag.cli.manage_output:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

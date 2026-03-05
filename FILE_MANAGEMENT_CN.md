@@ -25,16 +25,16 @@
 
 ### 方法 1：简单命令（推荐新手使用）
 
-使用 `manage_output.py` 进行快速简单的文件管理：
+使用 `trading_dag.cli.manage_output` 进行快速简单的文件管理：
 
 #### 查看文件
 
 ```bash
 # 列出所有文件
-uv run python manage_output.py list
+python -m trading_dag.cli.manage_output list
 
 # 显示统计摘要
-uv run python manage_output.py summary
+python -m trading_dag.cli.manage_output summary
 ```
 
 **输出示例：**
@@ -54,61 +54,61 @@ By Type:
 
 ```bash
 # 清理旧文件（保留最新10个，删除30天前的）
-uv run python manage_output.py cleanup
+python -m trading_dag.cli.manage_output cleanup
 
 # 删除所有日志文件
-uv run python manage_output.py delete-logs
+python -m trading_dag.cli.manage_output delete-logs
 
 # 删除所有JSON文件
-uv run python manage_output.py delete-json
+python -m trading_dag.cli.manage_output delete-json
 
 # 删除所有CSV文件
-uv run python manage_output.py delete-csv
+python -m trading_dag.cli.manage_output delete-csv
 
 # 删除所有文件（请谨慎使用！）
-uv run python manage_output.py delete-all
+python -m trading_dag.cli.manage_output delete-all
 ```
 
 ### 方法 2：高级命令（完全控制）
 
-使用 `utils.file_manager` 模块进行高级操作：
+使用 `trading_dag.utils.file_manager` 模块进行高级操作：
 
 #### 列出文件
 
 ```bash
 # 列出所有文件
-uv run python -m utils.file_manager --list
+python -m trading_dag.utils.file_manager --list
 
 # 只列出JSON文件
-uv run python -m utils.file_manager --list --type json
+python -m trading_dag.utils.file_manager --list --type json
 
 # 只列出CSV文件
-uv run python -m utils.file_manager --list --type csv
+python -m trading_dag.utils.file_manager --list --type csv
 
 # 只列出日志文件
-uv run python -m utils.file_manager --list --type log
+python -m trading_dag.utils.file_manager --list --type log
 ```
 
 #### 查看摘要
 
 ```bash
-uv run python -m utils.file_manager --summary
+python -m trading_dag.utils.file_manager --summary
 ```
 
 #### 按条件删除文件
 
 ```bash
 # 删除7天前的文件
-uv run python -m utils.file_manager --delete-older-than 7
+python -m trading_dag.utils.file_manager --delete-older-than 7
 
 # 只保留最新的5个文件（删除其余的）
-uv run python -m utils.file_manager --keep-latest 5
+python -m trading_dag.utils.file_manager --keep-latest 5
 
 # 只保留最新的10个JSON文件
-uv run python -m utils.file_manager --keep-latest 10 --type json
+python -m trading_dag.utils.file_manager --keep-latest 10 --type json
 
 # 删除所有JSON文件
-uv run python -m utils.file_manager --delete-type json
+python -m trading_dag.utils.file_manager --delete-type json
 ```
 
 #### 安全预览（Dry Run）
@@ -117,13 +117,13 @@ uv run python -m utils.file_manager --delete-type json
 
 ```bash
 # 预览将要删除的文件
-uv run python -m utils.file_manager --cleanup --dry-run
+python -m trading_dag.utils.file_manager --cleanup --dry-run
 
 # 预览只保留最新5个文件的操作
-uv run python -m utils.file_manager --keep-latest 5 --dry-run
+python -m trading_dag.utils.file_manager --keep-latest 5 --dry-run
 
 # 预览删除7天前文件的操作
-uv run python -m utils.file_manager --delete-older-than 7 --dry-run
+python -m trading_dag.utils.file_manager --delete-older-than 7 --dry-run
 ```
 
 ## 常见使用场景
@@ -132,17 +132,17 @@ uv run python -m utils.file_manager --delete-older-than 7 --dry-run
 
 ```bash
 # 快速摘要
-uv run python manage_output.py summary
+python -m trading_dag.cli.manage_output summary
 
 # 详细列表
-uv run python manage_output.py list
+python -m trading_dag.cli.manage_output list
 ```
 
 ### 场景 2：清理旧文件
 
 ```bash
 # 自动清理（推荐）
-uv run python manage_output.py cleanup
+python -m trading_dag.cli.manage_output cleanup
 ```
 
 这将：
@@ -154,35 +154,35 @@ uv run python manage_output.py cleanup
 
 ```bash
 # 只保留最新的5个文件
-uv run python -m utils.file_manager --keep-latest 5
+python -m trading_dag.utils.file_manager --keep-latest 5
 ```
 
 ### 场景 4：删除特定类型的文件
 
 ```bash
 # 删除所有日志文件（通常比较大）
-uv run python manage_output.py delete-logs
+python -m trading_dag.cli.manage_output delete-logs
 
 # 删除所有JSON文件
-uv run python manage_output.py delete-json
+python -m trading_dag.cli.manage_output delete-json
 
 # 删除所有CSV文件
-uv run python manage_output.py delete-csv
+python -m trading_dag.cli.manage_output delete-csv
 ```
 
 ### 场景 5：删除旧文件
 
 ```bash
 # 删除7天前的文件
-uv run python -m utils.file_manager --delete-older-than 7
+python -m trading_dag.utils.file_manager --delete-older-than 7
 
 # 先预览（推荐）
-uv run python -m utils.file_manager --delete-older-than 7 --dry-run
+python -m trading_dag.utils.file_manager --delete-older-than 7 --dry-run
 ```
 
 ## 基于配置的自动清理
 
-你可以在 `config.yaml` 中启用自动文件清理：
+你可以在 `config/config.yaml` 中启用自动文件清理：
 
 ```yaml
 # 文件管理选项
@@ -198,7 +198,7 @@ file_keep_latest: 10         # 至少保留10个最新文件
 你也可以通过编程方式使用文件管理器：
 
 ```python
-from utils.file_manager import OutputFileManager
+from trading_dag.utils.file_manager import OutputFileManager
 
 # 初始化管理器
 manager = OutputFileManager("output")
@@ -246,10 +246,10 @@ print(f"清理结果: {results}")
 
 1. **始终先预览**：删除前使用 `--dry-run`
    ```bash
-   uv run python -m utils.file_manager --cleanup --dry-run
+   python -m trading_dag.utils.file_manager --cleanup --dry-run
    ```
 
-2. **定期清理**：在 `config.yaml` 中设置自动清理
+2. **定期清理**：在 `config/config.yaml` 中设置自动清理
    ```yaml
    auto_cleanup_files: true
    file_retention_days: 30
@@ -258,7 +258,7 @@ print(f"清理结果: {results}")
 
 3. **删除前检查**：删除前始终先查看有哪些文件
    ```bash
-   uv run python manage_output.py summary
+   python -m trading_dag.cli.manage_output summary
    ```
 
 4. **保留重要数据**：清理前导出重要结果
@@ -268,7 +268,7 @@ print(f"清理结果: {results}")
 
 5. **使用类型特定删除**：明确要删除的类型时使用
    ```bash
-   uv run python manage_output.py delete-logs  # 只删除日志
+   python -m trading_dag.cli.manage_output delete-logs  # 只删除日志
    ```
 
 ## 示例
@@ -280,50 +280,50 @@ print(f"清理结果: {results}")
 # daily_cleanup.sh
 
 echo "正在清理旧输出文件..."
-uv run python manage_output.py cleanup
+python -m trading_dag.cli.manage_output cleanup
 
 echo "当前文件："
-uv run python manage_output.py summary
+python -m trading_dag.cli.manage_output summary
 ```
 
 ### 示例 2：只保留最新5个文件
 
 ```bash
 # 先预览
-uv run python -m utils.file_manager --keep-latest 5 --dry-run
+python -m trading_dag.utils.file_manager --keep-latest 5 --dry-run
 
 # 实际删除
-uv run python -m utils.file_manager --keep-latest 5
+python -m trading_dag.utils.file_manager --keep-latest 5
 ```
 
 ### 示例 3：清理前归档旧文件
 
 ```bash
 # 1. 查看当前文件
-uv run python manage_output.py summary
+python -m trading_dag.cli.manage_output summary
 
 # 2. 归档重要文件（手动步骤）
 mkdir -p archive/$(date +%Y%m%d)
 cp output/*.json archive/$(date +%Y%m%d)/
 
 # 3. 清理
-uv run python manage_output.py cleanup
+python -m trading_dag.cli.manage_output cleanup
 ```
 
 ### 示例 4：完整清理流程
 
 ```bash
 # 1. 查看当前文件
-uv run python manage_output.py summary
+python -m trading_dag.cli.manage_output summary
 
 # 2. 预览将要删除的文件
-uv run python -m utils.file_manager --cleanup --dry-run
+python -m trading_dag.utils.file_manager --cleanup --dry-run
 
 # 3. 实际清理
-uv run python manage_output.py cleanup
+python -m trading_dag.cli.manage_output cleanup
 
 # 4. 验证清理结果
-uv run python manage_output.py summary
+python -m trading_dag.cli.manage_output summary
 ```
 
 ## 快速参考
@@ -332,13 +332,13 @@ uv run python manage_output.py summary
 
 | 命令 | 描述 |
 |-----|------|
-| `manage_output.py list` | 列出所有文件 |
-| `manage_output.py summary` | 显示统计信息 |
-| `manage_output.py cleanup` | 自动清理 |
-| `manage_output.py delete-logs` | 删除日志文件 |
-| `manage_output.py delete-json` | 删除JSON文件 |
-| `manage_output.py delete-csv` | 删除CSV文件 |
-| `manage_output.py delete-all` | 删除所有文件 |
+| `python -m trading_dag.cli.manage_output list` | 列出所有文件 |
+| `python -m trading_dag.cli.manage_output summary` | 显示统计信息 |
+| `python -m trading_dag.cli.manage_output cleanup` | 自动清理 |
+| `python -m trading_dag.cli.manage_output delete-logs` | 删除日志文件 |
+| `python -m trading_dag.cli.manage_output delete-json` | 删除JSON文件 |
+| `python -m trading_dag.cli.manage_output delete-csv` | 删除CSV文件 |
+| `python -m trading_dag.cli.manage_output delete-all` | 删除所有文件 |
 
 ### 高级选项
 
@@ -364,7 +364,7 @@ uv run python manage_output.py summary
 ls -la output/
 
 # 列出文件的详细信息
-uv run python manage_output.py list
+python -m trading_dag.cli.manage_output list
 ```
 
 ### 权限错误
@@ -379,7 +379,7 @@ uv run python manage_output.py list
 ls -la output/
 
 # 使用显式路径尝试
-uv run python -m utils.file_manager --output-dir output --list
+python -m trading_dag.utils.file_manager --output-dir output --list
 ```
 
 ### 文件过大
@@ -391,10 +391,10 @@ uv run python -m utils.file_manager --output-dir output --list
 
 ```bash
 # 检查哪些文件较大
-uv run python manage_output.py summary
+python -m trading_dag.cli.manage_output summary
 
 # 删除旧的较大文件
-uv run python -m utils.file_manager --delete-older-than 7
+python -m trading_dag.utils.file_manager --delete-older-than 7
 ```
 
 ## 相关文档

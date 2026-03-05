@@ -39,25 +39,24 @@ The system uses a DAG workflow with the following nodes:
 
 ```
 .
-├── gateway/           # Binance API client (independent)
-├── core/              # Core framework (state, nodes, workflow, runner)
-│   ├── node.py        # Base node class
-│   ├── state.py       # Agent state management
-│   ├── workflow.py    # Workflow creation
-│   └── runner.py      # Unified trading system runner
-├── nodes/             # Workflow nodes
-├── strategies/        # Trading strategies
-├── backtest/          # Backtesting engine
-├── data/              # Data providers (Binance)
-├── indicators/        # Technical indicators
-├── llm/               # LLM integration
-├── utils/             # Utilities and configuration
-│   └── file_manager.py  # Output file management utilities
-├── main.py            # Unified entry point (supports both modes)
-├── backtest.py        # Backtest entry point (legacy, uses unified runner)
-├── manage_output.py   # File management convenience script
-├── config.yaml        # Configuration file
-└── output/            # Output directory (logs, JSON, CSV files)
+├── src/trading_dag/   # Main package (Python-friendly name with underscores)
+│   ├── cli/           # CLI entry points (main, backtest, manage_output)
+│   ├── core/          # State, nodes, workflow, runner
+│   ├── nodes/         # Workflow nodes
+│   ├── strategies/    # Trading strategies
+│   ├── backtest/      # Backtesting engine
+│   ├── data/          # Data providers (Binance)
+│   ├── gateway/       # Binance API client
+│   ├── indicators/    # Technical indicators
+│   ├── llm/           # LLM integration
+│   └── utils/         # Configuration and utilities
+├── config/            # Configuration files
+│   ├── config.yaml    # Main config (copy from config.example.yaml)
+│   └── config.example.yaml
+├── tests/             # Unit and integration tests
+├── output/            # Generated files (logs, JSON, CSV)
+├── run.py             # Convenience launcher
+└── pyproject.toml     # Package config and dependencies
 ```
 
 **Note**: This project is fully independent and does not require the original project directory.
@@ -106,7 +105,7 @@ pip install -r requirements.txt
 
 3. Configure environment variables:
 ```bash
-cp env.example .env
+cp .env.example .env
 # Edit .env with your API keys
 ```
 
@@ -130,11 +129,11 @@ GROQ_API_KEY=your-groq-key      # If using Groq
 
 4. Configure the system:
 ```bash
-cp config.example.yaml config.yaml
-# Edit config.yaml with your settings
+cp config/config.example.yaml config/config.yaml
+# Edit config/config.yaml with your settings
 ```
 
-**Note**: Both `config.yaml` and `.env` files are required for the system to function.
+**Note**: Both `config/config.yaml` and `.env` files are required for the system to function.
 
 ## Configuration
 
@@ -204,9 +203,9 @@ model:
 
 1. **Run backtest** (mode is determined by `config.yaml`):
 ```bash
-uv run main.py
+uv run python run.py
 # or
-python main.py
+python run.py
 ```
 
 The system automatically detects the mode from `config.yaml`:
@@ -216,14 +215,14 @@ The system automatically detects the mode from `config.yaml`:
 2. **Run specific mode**:
 ```bash
 # Backtest mode
-uv run backtest.py
+uv run python run.py --backtest
 # or
-python backtest.py
+python run.py --backtest
 
 # Live mode
-uv run main.py  # (set mode: live in config.yaml)
+uv run python run.py  # (set mode: live in config.yaml)
 # or
-python main.py
+python run.py
 ```
 
 ### Output Files
@@ -236,13 +235,13 @@ All output files are saved in the `output/` directory:
 Manage output files:
 ```bash
 # List all output files
-python manage_output.py list
+python -m trading_dag.cli.manage_output list
 
 # Show summary
-python manage_output.py summary
+python -m trading_dag.cli.manage_output summary
 
 # Clean up old files
-python manage_output.py cleanup
+python -m trading_dag.cli.manage_output cleanup
 
 # See FILE_MANAGEMENT.md for detailed usage
 ```
@@ -280,18 +279,18 @@ Live mode will:
 
 **Portfolio Initialization Options**:
 - **Sync from Exchange**: Automatically fetch current balances and positions from Binance (requires API keys)
-- **Manual Configuration**: Specify initial positions in `config.yaml` (cost basis auto-set from market prices)
+- **Manual Configuration**: Specify initial positions in `config/config.yaml` (cost basis auto-set from market prices)
 - **Cash Only**: Start with initial cash only (default)
 
 **Note**: This system generates signals but does NOT execute real trades. Use at your own risk.
 
 ## Adding New Strategies
 
-1. Create a new strategy file in `strategies/`:
+1. Create a new strategy file in `src/trading_dag/strategies/`:
 
 ```python
-from core.node import BaseNode
-from core.state import AgentState
+from trading_dag.core.node import BaseNode
+from trading_dag.core.state import AgentState
 from typing import Dict, Any
 import json
 from langchain_core.messages import HumanMessage
@@ -317,8 +316,8 @@ class MyStrategy(BaseNode):
         }
 ```
 
-2. Register in `strategies/__init__.py`
-3. Add to `config.yaml` under `signals.strategies`
+2. Register in `src/trading_dag/strategies/__init__.py`
+3. Add to `config/config.yaml` under `signals.strategies`
 
 ## Supported LLM Providers
 
@@ -364,12 +363,12 @@ The system automatically generates output files in the `output/` directory. Use 
 
 ```bash
 # Quick commands
-python manage_output.py list      # List all files
-python manage_output.py summary  # Show statistics
-python manage_output.py cleanup  # Clean old files
+python -m trading_dag.cli.manage_output list      # List all files
+python -m trading_dag.cli.manage_output summary  # Show statistics
+python -m trading_dag.cli.manage_output cleanup  # Clean old files
 
 # Advanced usage
-python -m utils.file_manager --help
+python -m trading_dag.utils.file_manager --help
 ```
 
 See [FILE_MANAGEMENT.md](FILE_MANAGEMENT.md) for detailed file management documentation.
@@ -466,15 +465,15 @@ Both backtest and live modes use similar data fetching mechanisms:
 ### API Authentication Errors
 - Check your `.env` file has correct API keys (not placeholder values)
 - For OpenAI-compatible APIs (DeepSeek, etc.), ensure `OPENAI_API_KEY` is set
-- Verify `base_url` in `config.yaml` matches your provider
+- Verify `base_url` in `config/config.yaml` matches your provider
 
 ### Strategy Loading Errors
-- Ensure strategy names in `config.yaml` match class names exactly (case-sensitive)
-- Strategy files should be in `strategies/` directory with matching class names
+- Ensure strategy names in `config/config.yaml` match class names exactly (case-sensitive)
+- Strategy files should be in `src/trading_dag/strategies/` directory with matching class names
 
 ### Configuration Errors
 - `primary_interval` will be automatically added to `signals.intervals` if not present (no manual configuration needed)
-- Both `config.yaml` and `.env` files must exist and be properly configured
+- Both `config/config.yaml` and `.env` files must exist and be properly configured
 
 ### Data Issues
 - If backtest shows insufficient data, check that `start_date` and `end_date` are valid
