@@ -41,6 +41,7 @@ dependencies = [
 trading-dag = "trading_dag.cli.main:main"
 trading-dag-backtest = "trading_dag.cli.backtest:main"
 trading-dag-manage-output = "trading_dag.cli.manage_output:main"
+trading-dag-benchmark-phase1 = "trading_dag.cli.benchmark_phase1:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

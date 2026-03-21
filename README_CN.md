@@ -223,6 +223,31 @@ uv run python run.py  # （在config.yaml中设置 mode: live）
 python run.py
 ```
 
+3. **运行 Phase 1 基准对照套件**（Full DAG + 单策略组 + 强基线组）：
+```bash
+# 可选：先创建 benchmark 配置文件
+cp config/benchmark_phase1.example.yaml config/benchmark_phase1.yaml
+
+# 使用 run.py 统一入口
+uv run python run.py --benchmark-phase1
+# 或
+python run.py --benchmark-phase1
+
+# 或直接调用 CLI
+uv run python -m trading_dag.cli.benchmark_phase1 \
+  --config config/config.yaml \
+  --benchmark-config config/benchmark_phase1.yaml
+```
+
+### Phase 1 Benchmark 说明
+
+- **统一调用入口**：`run_phase1_benchmarks(...)` 作为唯一编排入口。
+- **内部模块化拆分**：benchmark 代码按数据模型、指标计算、baseline 仿真、DAG 实验执行拆分在 `src/trading_dag/benchmark/` 下，便于后续维护和扩展。
+- **注册表驱动实验组**：在 `phase1_registry.py` 中增删实验组，无需改 runner 主逻辑。
+- **输出文件**：
+  - `output/benchmark_phase1_summary_YYYYMMDD_HHMMSS.csv`
+  - `output/benchmark_phase1_equity_YYYYMMDD_HHMMSS.csv`
+
 ### 输出文件
 
 所有输出文件保存在 `output/` 目录：

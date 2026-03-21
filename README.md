@@ -225,6 +225,31 @@ uv run python run.py  # (set mode: live in config.yaml)
 python run.py
 ```
 
+3. **Run Phase 1 benchmark suite** (Full DAG + single-strategy variants + strong baselines):
+```bash
+# Optional: create benchmark option file first
+cp config/benchmark_phase1.example.yaml config/benchmark_phase1.yaml
+
+# Run with run.py unified entry
+uv run python run.py --benchmark-phase1
+# or
+python run.py --benchmark-phase1
+
+# Alternative direct CLI
+uv run python -m trading_dag.cli.benchmark_phase1 \
+  --config config/config.yaml \
+  --benchmark-config config/benchmark_phase1.yaml
+```
+
+### Phase 1 Benchmark Notes
+
+- **Unified call**: `run_phase1_benchmarks(...)` is the single orchestration entry.
+- **Modular internals**: the benchmark implementation is split into data models, metrics, baseline simulators, and DAG variant runners under `src/trading_dag/benchmark/`.
+- **Registry-driven experiments**: edit `phase1_registry.py` to add/remove experiment groups without changing runner logic.
+- **Outputs**:
+  - `output/benchmark_phase1_summary_YYYYMMDD_HHMMSS.csv`
+  - `output/benchmark_phase1_equity_YYYYMMDD_HHMMSS.csv`
+
 ### Output Files
 
 All output files are saved in the `output/` directory:
