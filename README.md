@@ -227,8 +227,8 @@ python run.py
 
 3. **Run Phase 1 benchmark suite** (Full DAG + single-strategy variants + strong baselines):
 ```bash
-# Optional: create benchmark option file first
-cp config/benchmark_phase1.example.yaml config/benchmark_phase1.yaml
+# Optional: create unified benchmark config first
+cp config/benchmark.example.yaml config/benchmark.yaml
 
 # Run with run.py unified entry
 uv run python run.py --benchmark-phase1
@@ -236,16 +236,19 @@ uv run python run.py --benchmark-phase1
 python run.py --benchmark-phase1
 
 # Alternative direct CLI
-uv run python -m trading_dag.cli.benchmark_phase1 \
-  --config config/config.yaml \
-  --benchmark-config config/benchmark_phase1.yaml
+uv run python -m trading_dag.cli.benchmark_phase1 --config config/benchmark.yaml
 ```
 
 ### Phase 1 Benchmark Notes
 
 - **Unified call**: `run_phase1_benchmarks(...)` is the single orchestration entry.
+- **Unified benchmark config**: benchmark entry defaults to `config/benchmark.yaml`, so you can manage both main backtest settings and phase1 controls in one file.
 - **Modular internals**: the benchmark implementation is split into data models, metrics, baseline simulators, and DAG variant runners under `src/trading_dag/benchmark/`.
 - **Registry-driven experiments**: edit `phase1_registry.py` to add/remove experiment groups without changing runner logic.
+- **Clear terminal labels**: each experiment prints `[Phase1][i/N] ... start/done` so you can identify the current scenario at a glance.
+- **Lower-noise benchmark logs**: tune `dag_print_frequency` and `dag_use_progress_bar` in `config/benchmark.yaml` under `phase1`.
+- **Split-run support**: use `include_dag_experiments` / `include_baseline_experiments` to run only selected groups.
+- **Per-experiment export**: set `export_individual_results: true` to generate separate CSV outputs per scenario.
 - **Outputs**:
   - `output/benchmark_phase1_summary_YYYYMMDD_HHMMSS.csv`
   - `output/benchmark_phase1_equity_YYYYMMDD_HHMMSS.csv`

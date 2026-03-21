@@ -225,8 +225,8 @@ python run.py
 
 3. **运行 Phase 1 基准对照套件**（Full DAG + 单策略组 + 强基线组）：
 ```bash
-# 可选：先创建 benchmark 配置文件
-cp config/benchmark_phase1.example.yaml config/benchmark_phase1.yaml
+# 可选：先创建统一 benchmark 配置
+cp config/benchmark.example.yaml config/benchmark.yaml
 
 # 使用 run.py 统一入口
 uv run python run.py --benchmark-phase1
@@ -234,16 +234,19 @@ uv run python run.py --benchmark-phase1
 python run.py --benchmark-phase1
 
 # 或直接调用 CLI
-uv run python -m trading_dag.cli.benchmark_phase1 \
-  --config config/config.yaml \
-  --benchmark-config config/benchmark_phase1.yaml
+uv run python -m trading_dag.cli.benchmark_phase1 --config config/benchmark.yaml
 ```
 
 ### Phase 1 Benchmark 说明
 
 - **统一调用入口**：`run_phase1_benchmarks(...)` 作为唯一编排入口。
+- **统一 benchmark 配置**：benchmark 默认使用 `config/benchmark.yaml`，可在同一文件中同时管理主回测参数和 phase1 控制项。
 - **内部模块化拆分**：benchmark 代码按数据模型、指标计算、baseline 仿真、DAG 实验执行拆分在 `src/trading_dag/benchmark/` 下，便于后续维护和扩展。
 - **注册表驱动实验组**：在 `phase1_registry.py` 中增删实验组，无需改 runner 主逻辑。
+- **终端标签更清晰**：每组实验会打印 `[Phase1][i/N] ... start/done`，可以快速识别当前场景。
+- **可控日志噪声**：可在 `config/benchmark.yaml` 的 `phase1` 中设置 `dag_print_frequency` 与 `dag_use_progress_bar`。
+- **支持拆分运行**：可通过 `include_dag_experiments` / `include_baseline_experiments` 只跑指定实验组。
+- **支持单独输出**：设置 `export_individual_results: true` 后，每个场景都会单独导出 CSV。
 - **输出文件**：
   - `output/benchmark_phase1_summary_YYYYMMDD_HHMMSS.csv`
   - `output/benchmark_phase1_equity_YYYYMMDD_HHMMSS.csv`

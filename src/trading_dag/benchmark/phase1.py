@@ -7,8 +7,9 @@ Experiment set:
 - Strong baselines (Buy & Hold / Equal Weight Rebalance)
 """
 from datetime import datetime
+from time import perf_counter
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -30,6 +31,11 @@ def run_phase1_benchmarks(
     run_equal_weight_rebalance: bool = True,
     rebalance_every_bars: int = 24,
     output_dir: str = "output",
+    dag_print_frequency: int = 1000,
+    dag_use_progress_bar: bool = True,
+    include_dag_experiments: Optional[List[str]] = None,
+    include_baseline_experiments: Optional[List[str]] = None,
+    export_individual_results: bool = False,
 ) -> Dict[str, Any]:
     """Run phase 1 benchmark set and export summary tables."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -39,21 +45,52 @@ def run_phase1_benchmarks(
     experiments: List[ExperimentResult] = []
     curves: List[pd.DataFrame] = []
 
-    dag_registry = get_phase1_dag_registry(default_strategies=config.signals.strategies)
-
-    for spec in dag_registry:
-        result, curve = run_dag_variant(spec.name, spec.strategies, config)
-        experiments.append(result)
-        curves.append(curve.assign(experiment=spec.name))
-
+    dag_registry = get_phase1_dag_registry(
+        default_strategies=config.signals.strategies,
+        include_names=include_dag_experiments,
+    )
     baseline_registry = get_phase1_baseline_registry(
         run_buy_and_hold=run_buy_and_hold,
         run_equal_weight_rebalance=run_equal_weight_rebalance,
         rebalance_every_bars=rebalance_every_bars,
+        include_names=include_baseline_experiments,
     )
+    if not dag_registry and not baseline_registry:
+        raise ValueError(
+            "No experiments selected. Check include_dag_experiments/include_baseline_experiments "
+            "or enable baseline switches."
+        )
+    total_experiments = len(dag_registry) + len(baseline_registry)
+    experiment_idx = 0
+
+    for spec in dag_registry:
+        experiment_idx += 1
+        print(f"\n[Phase1][{experiment_idx}/{total_experiments}] DAG experiment: {spec.name} - start")
+        start_time = perf_counter()
+        result, curve = run_dag_variant(
+            spec.name,
+            spec.strategies,
+            config,
+            print_frequency=dag_print_frequency,
+            use_progress_bar=dag_use_progress_bar,
+        )
+        elapsed = perf_counter() - start_time
+        print(
+            f"[Phase1][{experiment_idx}/{total_experiments}] DAG experiment: {spec.name} - done "
+            f"(return={result.total_return_pct:.2f}%, sharpe={result.sharpe_ratio:.2f}, {elapsed:.1f}s)"
+        )
+        experiments.append(result)
+        curves.append(curve.assign(experiment=spec.name))
+        if export_individual_results:
+            single_curve_path = out_dir / f"benchmark_phase1_equity_{spec.name}_{timestamp}.csv"
+            curve.assign(experiment=spec.name)[["experiment", "date", "portfolio_value"]].to_csv(
+                single_curve_path,
+                index=False,
+            )
 
     # Prepare baseline data only once when baseline experiments exist.
     if baseline_registry:
+        print("\n[Phase1] Preparing baseline market data once for all baseline experiments...")
         klines = prepare_primary_klines(
             tickers=config.signals.tickers,
             primary_interval=config.primary_interval,
@@ -62,6 +99,9 @@ def run_phase1_benchmarks(
         )
 
         for spec in baseline_registry:
+            experiment_idx += 1
+            print(f"\n[Phase1][{experiment_idx}/{total_experiments}] Baseline experiment: {spec.name} - start")
+            start_time = perf_counter()
             baseline_curve = spec.simulator(
                 tickers=config.signals.tickers,
                 klines=klines,
@@ -85,6 +125,18 @@ def run_phase1_benchmarks(
                 )
             )
             curves.append(baseline_curve.assign(experiment=spec.name))
+            if export_individual_results:
+                single_curve_path = out_dir / f"benchmark_phase1_equity_{spec.name}_{timestamp}.csv"
+                baseline_curve.assign(experiment=spec.name)[["experiment", "date", "portfolio_value"]].to_csv(
+                    single_curve_path,
+                    index=False,
+                )
+            elapsed = perf_counter() - start_time
+            print(
+                f"[Phase1][{experiment_idx}/{total_experiments}] Baseline experiment: {spec.name} - done "
+                f"(return={safe_float(baseline_metrics['total_return_pct']):.2f}%, "
+                f"sharpe={safe_float(baseline_metrics['sharpe_ratio']):.2f}, {elapsed:.1f}s)"
+            )
 
     summary_rows = []
     for exp in experiments:
@@ -118,6 +170,25 @@ def run_phase1_benchmarks(
     summary_df.to_csv(summary_path, index=False)
     if not curves_df.empty:
         curves_df.to_csv(equity_path, index=False)
+    if export_individual_results:
+        for exp in experiments:
+            single_summary_path = out_dir / f"benchmark_phase1_summary_{exp.name}_{timestamp}.csv"
+            pd.DataFrame(
+                [
+                    {
+                        "experiment": exp.name,
+                        "category": exp.category,
+                        "initial_portfolio_value": exp.initial_portfolio_value,
+                        "final_portfolio_value": exp.final_portfolio_value,
+                        "total_return_pct": exp.total_return_pct,
+                        "sharpe_ratio": exp.sharpe_ratio,
+                        "sortino_ratio": exp.sortino_ratio,
+                        "max_drawdown_pct": exp.max_drawdown_pct,
+                        "win_rate_pct": exp.win_rate_pct,
+                        "num_points": exp.num_points,
+                    }
+                ]
+            ).to_csv(single_summary_path, index=False)
 
     return {
         "summary_df": summary_df,

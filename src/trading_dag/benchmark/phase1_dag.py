@@ -14,6 +14,8 @@ def run_dag_variant(
     variant_name: str,
     strategy_list: List[str],
     config: Any,
+    print_frequency: int,
+    use_progress_bar: bool,
 ) -> Tuple[ExperimentResult, pd.DataFrame]:
     """Run one DAG-based experiment via existing backtester."""
     backtester = Backtester(
@@ -30,8 +32,8 @@ def run_dag_variant(
         initial_margin_requirement=config.margin_requirement,
         show_agent_graph=False,
         show_reasoning=False,
-        print_frequency=max(getattr(config, "print_frequency", 1), 1),
-        use_progress_bar=False,
+        print_frequency=max(print_frequency, 1),
+        use_progress_bar=use_progress_bar,
         log_file=None,
         initial_positions=getattr(config, "initial_positions", None),
     )

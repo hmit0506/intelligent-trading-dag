@@ -1,9 +1,0 @@
-run_buy_and_hold: true
-run_equal_weight_rebalance: true
-
-# Rebalance frequency measured in primary-interval bars.
-# Example: if primary interval is 1h and value is 24, rebalance once per day.
-rebalance_every_bars: 24
-
-output_dir: "output"
-
