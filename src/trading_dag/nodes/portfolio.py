@@ -11,6 +11,54 @@ from trading_dag.core.state import AgentState, show_agent_reasoning
 from trading_dag.llm.llm import get_llm, json_parser
 
 
+def summarize_risk_reasoning_for_prompt(reasoning: Any, ticker: str) -> str:
+    """
+    Build one or two short English sentences from RiskManagementNode's deterministic ``reasoning`` dict.
+
+    This is not LLM output; it is passed to the portfolio LLM so it understands *why* sizing looks the way it does.
+    """
+    if not isinstance(reasoning, dict):
+        return f"{ticker}: Risk context unavailable."
+    err = reasoning.get("error")
+    if err is not None:
+        return f"{ticker}: Risk sizing degraded ({err})."
+
+    mode = str(reasoning.get("mode", ""))
+    if mode == "simplified_fixed_fraction":
+        return (
+            f"{ticker}: Risk node used simplified sizing (fixed portfolio fraction ÷ price; "
+            "no stop-distance or ATR scaling)."
+        )
+
+    if mode == "full_risk_sizing":
+        sdm = str(reasoning.get("stop_distance_mode", "unknown"))
+        rps_raw = reasoning.get("risk_per_share")
+        try:
+            rps = float(rps_raw) if rps_raw is not None else None
+        except (TypeError, ValueError):
+            rps = None
+        leg = str(reasoning.get("leg", ""))
+
+        core = (
+            f"{ticker}: Full risk sizing with stop_distance_mode={sdm}"
+            f"{f' and risk_per_share≈{rps:.6g} USD per unit' if rps is not None else ''}."
+        )
+
+        if leg and leg != "flat_spot":
+            sp_raw = reasoning.get("stop_price")
+            try:
+                sp = float(sp_raw) if sp_raw is not None else None
+            except (TypeError, ValueError):
+                sp = None
+            if sp is not None:
+                return f"{core} Reference leg={leg}, theoretical stop≈{sp:.6g}."
+            return f"{core} Reference leg={leg}."
+
+        return core
+
+    return f"{ticker}: Risk context (mode={mode or 'unknown'})."
+
+
 class PortfolioManagementNode(BaseNode):
     """Makes final trading decisions and generates orders for multiple tickers."""
 
@@ -27,6 +75,7 @@ class PortfolioManagementNode(BaseNode):
         current_prices = {}
         max_shares = {}
         suggested_quantities = {}
+        risk_context_summaries: Dict[str, str] = {}
         signals_by_ticker = {}
 
         for ticker in tickers:
@@ -37,6 +86,9 @@ class PortfolioManagementNode(BaseNode):
             position_limits[ticker] = lim
             current_prices[ticker] = risk_data.get("current_price", 0.0)
             suggested_quantities[ticker] = risk_data.get("suggested_quantity", 0.0)
+            risk_context_summaries[ticker] = summarize_risk_reasoning_for_prompt(
+                risk_data.get("reasoning"), ticker
+            )
 
             if current_prices[ticker] > 0.0:
                 max_shares[ticker] = float(position_limits[ticker] / current_prices[ticker])
@@ -63,6 +115,7 @@ class PortfolioManagementNode(BaseNode):
                 current_prices=current_prices,
                 max_shares=max_shares,
                 suggested_quantities=suggested_quantities,
+                risk_context_summaries=risk_context_summaries,
                 portfolio=portfolio,
                 model_name=state["metadata"]["model_name"],
                 model_provider=state["metadata"]["model_provider"],
@@ -190,6 +243,7 @@ def generate_trading_decision(
     current_prices: Dict[str, float],
     max_shares: Dict[str, float],
     suggested_quantities: Dict[str, float],
+    risk_context_summaries: Dict[str, str],
     portfolio: Dict[str, Any],
     model_name: str,
     model_provider: str,
@@ -218,7 +272,8 @@ def generate_trading_decision(
               * Short quantity must respect margin requirements
             
             - The max_shares values are pre-calculated to respect overall position limits.
-            - The suggested_quantities are calculated by the risk management node using a Fixed Fractional method. Prioritize these quantities if possible.
+            - The suggested_quantities are calculated by the risk management node (deterministic sizing). Prioritize these quantities if possible.
+            - risk_context_summary gives a short English explanation of how sizing was derived (stop_distance_mode, risk_per_share, etc.); it is not a trading signal — combine it with strategy signals and caps.
             - Consider both long and short opportunities based on signals
             - Maintain appropriate risk management with both long and short exposure
             
@@ -250,6 +305,7 @@ def generate_trading_decision(
             - signals_by_ticker: dictionary of ticker → signals from various analyst agents (organized by interval)
             - max_shares: maximum shares allowed per ticker based on overall position limits
             - suggested_quantities: quantities suggested by the risk management node
+            - risk_context_summary: ticker → 1–2 sentence deterministic summary of risk-node reasoning (for narrative context)
             - portfolio_cash: current cash in portfolio
             - portfolio_positions: current positions (both long and short)
             - current_prices: current prices for each ticker
@@ -276,6 +332,9 @@ def generate_trading_decision(
             
             Suggested Quantities (from Risk Management, prioritize this if feasible):
             {suggested_quantities}
+            
+            Risk context (deterministic 1–2 sentence summary per ticker from the risk node; sizing context, not a price signal):
+            {risk_context_summary}
             
             Portfolio Cash: {portfolio_cash}
             Current Positions: {portfolio_positions}
@@ -449,6 +508,7 @@ For EACH timepoint, you need to:
         "future_analysis_section": future_analysis_section,
         "max_shares": json.dumps(max_shares, indent=2),
         "suggested_quantities": json.dumps(suggested_quantities, indent=2),
+        "risk_context_summary": json.dumps(risk_context_summaries, indent=2),
         "portfolio_cash": f"{portfolio.get('cash', 0.0):.2f}",
         "portfolio_positions": json.dumps(portfolio.get('positions', {}), indent=2),
         "margin_requirement": f"{portfolio.get('margin_requirement', 0.0):.2f}",

@@ -32,7 +32,7 @@
 2. **DataNode**：获取每个指定时间框架的市场数据
 3. **MergeNode**：合并多时间框架数据
 4. **策略节点**（MacdStrategy、RSIStrategy、BollingerStrategy）：应用技术分析
-5. **RiskManagementNode**：按 `risk` 配置计算头寸建议（见 [风险管理](#风险管理)）
+5. **RiskManagementNode**：按 `risk` 做确定性头寸建议；组合 LLM 另收到由 `reasoning` 摘要的 `risk_context_summary`（见 [风险管理](#风险管理)）
 6. **PortfolioManagementNode**：使用LLM推理做出最终交易决策
 
 ## 项目结构
@@ -199,11 +199,13 @@ model:
 
 ### 风险管理
 
-本 README 中 **关于 `RiskManagementNode` 的说明集中在此处**：配置项、公式含义、benchmark 对齐与 Phase 2 消融。（实现：`nodes/risk.py`；类型：`utils/config.py` 中 `RiskManagementConfig`。）
+本小节是 README 里 **唯一** 系统化说明 `RiskManagementNode` 的地方：配置、**每标的输出字段**、**组合 LLM 实际收到什么**、sizing 公式与 Phase 2 对照。实现：`nodes/risk.py`；类型：`utils/config.py` 的 `RiskManagementConfig`。风控节点 **全是确定性计算**，**内部不调 LLM**。
 
-**配置位置。** 在 `config/config.yaml`（及 `config.example.yaml`）根级别使用 `risk`。统一基准配置中写在 `config/benchmark.yaml` 的 **`main.risk`**，与单机回测使用相同数值时，**FullDAG 行为一致**。
+#### 配置
 
-**`risk` 示例**（整段省略则用代码默认值）：
+在 `config/config.yaml`（及 `config.example.yaml`）根级使用 `risk`；基准场景在 `config/benchmark.yaml` 的 **`main.risk`** 写相同块，便于 **FullDAG** 与单机回测对齐。
+
+示例（省略整段则用代码默认值）：
 
 ```yaml
 risk:
@@ -217,18 +219,41 @@ risk:
   max_notional_fraction_per_ticker: 1.0
 ```
 
-**运行时注入。** `risk_config_to_metadata()` 将上述字段写入 `AgentState` 的 `metadata`；`Backtester`、`TradingSystemRunner`、`dag_backtest_runner` 均使用 **`Config.risk`**，保证回测、实盘与 DAG benchmark 一致。
+`risk_config_to_metadata()` 把上述项写入 `AgentState.metadata`；`Backtester`、`TradingSystemRunner`、`dag_backtest_runner` 共用 **`Config.risk`**，保证回测、实盘与 DAG benchmark 一致。
 
-**完整 sizing 分支**（默认，`metadata["ablation_full_risk"]` 为 true）。每笔目标风险资金约为 `risk_per_trade_pct × 组合总市值`；每单位价格波动风险 `risk_per_share` 由 `stop_distance_mode` 决定：
+#### 节点输出（每个 ticker）
 
-- **`entry_or_spot_pct`**：已有仓时用 `long_cost_basis` / `short_cost_basis` 与 `stop_loss_pct` 定义止损距；**空仓**时退回以现价为参考的百分比距离（与旧版节点结构一致）。
-- **`atr`**：主周期 OHLC 上 `ATR × atr_multiplier`（具体估计见代码）。
+写入 `analyst_signals["risk_management_agent"][ticker]`：
 
-建议数量 = 组合风险预算 / `risk_per_share`，再经 `max_notional_fraction_per_ticker` 相对总市值封顶、按 `quantity_decimals` 取整、`min_quantity` 托底。
+| 字段 | 类型 | 作用 |
+|------|------|------|
+| `suggested_quantity` | float | 经风险预算、名义上限、小数位与 `min_quantity` 处理后的**建议数量**。 |
+| `current_price` | float | 主周期最新 **收盘价**（用于 sizing）。 |
+| `remaining_position_limit` | float | `min(现金, max_notional_fraction_per_ticker × 组合总市值)`，当步名义上限。 |
+| `reasoning` | dict | 结构化追踪：如 `mode`、`stop_distance_mode`、`risk_per_share`、多空腿 `leg`、参考 `stop_price`、ATR 相关字段，或缺 K 线时的 `error`。**不是**模型生成的 prose，仅供解释与排错。 |
 
-**简化分支**（`metadata["ablation_full_risk"]` 为 false，即 Phase 2 `Ablate_RiskSizing`）。仅「固定比例 × 组合市值 / 现价」，**不再**用止损距/ATR，但仍沿用同一套 `risk_per_trade_pct`、名义上限与取整规则。
+图消息里另有一条 `HumanMessage` 承载整份 JSON；与组合层 prompt 是两套用途。
 
-**Phase 2 对照。** `FullDAG` 走完整分支 + **`main.risk`**；`Ablate_RiskSizing` 仅切换为简化分支。标志位：`benchmark/ablation.py`、`Agent.workflow_metadata`、`Backtester.ablation`。
+#### 组合 LLM 实际读到的内容
+
+`PortfolioManagementNode` **不会**把完整 `reasoning` 塞进「策略信号」 JSON：`signals_by_ticker` **只含策略代理**。从风控结果中**单独抽出**并写入 **Portfolio LLM** prompt 的有：
+
+- **`current_prices`** ← `current_price`
+- **`max_shares`** ← `remaining_position_limit ÷ price`（无效价为 0）
+- **`suggested_quantities`** ← `suggested_quantity`
+- **`risk_context_summary`** ← 每个 ticker **一两句英文**摘要，由 `portfolio.py` 的 `summarize_risk_reasoning_for_prompt` 从 `reasoning` 生成（例如 `stop_distance_mode`、`risk_per_share`、有仓时的参考止损与 `leg`）。作用是让 LLM **理解建议数量的依据**，而不把整坨 dict 贴进上下文。
+
+打开 **`show_reasoning`** 主要影响**终端**打印；**不会**自动把完整 `reasoning` 并入上述 Portfolio LLM 输入。
+
+**规则组合路径**（如 `Ablate_LLMPortfolio`）不调组合 LLM，但仍使用风控给出的 `suggested_quantities`、`max_shares`、`current_prices`。
+
+#### Sizing 公式（完整 / 简化）
+
+**完整分支**（默认，`ablation_full_risk` 为 true）：目标风险资金 ≈ `risk_per_trade_pct × 组合总市值`；`risk_per_share` 由 `stop_distance_mode` 决定（`entry_or_spot_pct` 用成本与 `stop_loss_pct`；空仓时为现价参考距；`atr` 为主周期 ATR×倍数，见 `nodes/risk.py`）。建议量 = 风险预算 / `risk_per_share`，再经名义封顶、取整、`min_quantity`。
+
+**简化分支**（`Ablate_RiskSizing`）：仅「固定比例 × 组合市值 / 现价」，无止损距/ATR，但 cap 与取整规则与完整分支共用同一配置项。
+
+**Phase 2 对照。** `FullDAG` 用完整分支 + **`main.risk`**；`Ablate_RiskSizing` 仅换简化分支。标志位：`benchmark/ablation.py`、`Agent.workflow_metadata`、`Backtester.ablation`。
 
 ## 使用方法
 
@@ -506,7 +531,7 @@ python -m trading_dag.utils.file_manager --help
 - 每个数据点触发完整的工作流执行：
   1. DataNode获取到当前时间点的历史数据
   2. 所有策略并行执行，分析所有交易对和时间间隔
-  3. RiskManagementNode计算头寸规模
+  3. RiskManagementNode 计算建议量与 `reasoning`；组合 LLM 收到价格、上限、建议量及英文 `risk_context_summary`
   4. PortfolioManagementNode使用LLM做出最终决策
 - 决策在回测模式中立即执行
 
