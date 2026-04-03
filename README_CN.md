@@ -175,6 +175,17 @@ initial_positions:
 #     ETHUSDT:
 #       long: 2.0
 
+# 风控头寸建议（RiskManagementNode）；省略时与代码默认值一致（见 utils/config.py）
+risk:
+  risk_per_trade_pct: 0.02
+  stop_loss_pct: 0.05
+  min_quantity: 0.001
+  quantity_decimals: 3
+  stop_distance_mode: entry_or_spot_pct
+  atr_period: 14
+  atr_multiplier: 1.0
+  max_notional_fraction_per_ticker: 1.0
+
 signals:
   intervals: ["1h", "4h"]  # 要分析的所有间隔。如果primary_interval未列出，将自动包含。
   tickers: ["BTCUSDT", "ETHUSDT"]
@@ -278,7 +289,7 @@ uv run python -m trading_dag.cli.benchmark_phase2 --config config/benchmark.yaml
 
 **研究目的。** Phase 2 回答的是**模块必要性**：在其余设计尽量不变时，**拿掉 DAG 中的一类机制**（多周期、LLM 组合、或结构化风控 sizing）绩效与风险特征如何变化？这是典型的**单因素消融**：注册表里每次默认只关一个维度，并保留 `FullDAG` 作参照；**组合消融**（同时关两项）需自行在 `phase2_registry.py` 增加条目。
 
-**参照组 `FullDAG`。** 与 Phase 1 全策略一致，且 `DAGAblationSettings` 全为默认：多周期数据路径、组合节点走 **LLM**、风控走**完整**分支（含 `risk.py` 中基于止损距离等的头寸逻辑）。
+**参照组 `FullDAG`。** 与 Phase 1 全策略一致，且 `DAGAblationSettings` 全为默认：多周期数据路径、组合节点走 **LLM**、风控走**完整**分支（`risk.py`，参数来自 **`main.risk`**，与普通回测一致）。
 
 **各消融在实现上的含义（与论文表述对应）。**
 
@@ -286,7 +297,7 @@ uv run python -m trading_dag.cli.benchmark_phase2 --config config/benchmark.yaml
 |--------|----------------------|----------|
 | `Ablate_MultiInterval` | 去掉辅助周期，仅保留主周期信息 | `Backtester` 仅向 `Agent` 与预取传入 `primary_interval` 对应的区间，图上只跑单周期分支。 |
 | `Ablate_LLMPortfolio` | 去掉 LLM 在多策略信号上的融合决策 | `PortfolioManagementNode` 走 `generate_rule_based_trading_decision`：按**主周期**聚合各代理信号，确定性映射为买卖开平，规模受风控建议与现金约束。 |
-| `Ablate_RiskSizing` | 弱化结构化风险 sizing | `RiskManagementNode` 在简化分支用**固定账户比例 / 现价**头寸建议，**不再**经过原止损价门槛逻辑；组合与（默认）LLM 仍保留。 |
+| `Ablate_RiskSizing` | 弱化结构化风险 sizing | `RiskManagementNode` 在简化分支用**固定比例**头寸建议（仍使用配置里 **`risk`** 的数量与名义上限等）；组合与（默认）LLM 仍保留。 |
 
 标志位由 `benchmark/ablation.py` 的 `DAGAblationSettings` 与 `workflow_metadata()` 传到 `Agent` 的 `state["metadata"]`（`use_llm_portfolio`、`ablation_full_risk`），并由 `backtest/engine.py` 的 `Backtester` 控制 `intervals`。详情见 `nodes/portfolio.py`、`nodes/risk.py`。
 
@@ -455,6 +466,7 @@ python -m trading_dag.utils.file_manager --help
 详细示例请参阅上方的配置部分。主要选项包括：
 
 - **投资组合初始化**：从交易所同步或手动持仓（成本基础自动设置）
+- **风控（`risk`）**：单笔风险比例、按 `entry_or_spot_pct` 或 `ATR` 的止损距离、数量小数位与单标的敞口上限；经 metadata 注入 Agent，**回测 / 实盘 / benchmark 的 `main.risk`** 一致即可对齐行为（实现见 `nodes/risk.py`）
 - **性能选项**：打印频率、进度条、日志记录
 - **文件管理**：自动清理、保留策略
 

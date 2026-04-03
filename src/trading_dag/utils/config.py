@@ -2,14 +2,14 @@
 Configuration management.
 """
 from pydantic_settings import BaseSettings
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 import yaml
 from pathlib import Path
 
 from dotenv import load_dotenv
-from trading_dag.utils.constants import Interval
+from trading_dag.utils.constants import Interval, QUANTITY_DECIMALS
 
 load_dotenv()
 
@@ -19,6 +19,47 @@ class SignalConfig(BaseModel):
     intervals: List[Interval]
     tickers: List[str]
     strategies: List[str]
+
+
+class RiskManagementConfig(BaseModel):
+    """
+    Position sizing inputs for RiskManagementNode (wired via AgentState metadata).
+
+    - stop_distance_mode ``entry_or_spot_pct``: use average cost for open long/short legs;
+      when flat, fall back to spot-based distance (same structure as the legacy node).
+    - ``atr``: use ATR(tr) * atr_multiplier as dollars risk per unit (volatility scaling).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    risk_per_trade_pct: float = Field(default=0.02, gt=0.0, le=1.0)
+    stop_loss_pct: float = Field(default=0.05, gt=0.0, le=1.0)
+    min_quantity: float = Field(default=0.001, ge=0.0)
+    quantity_decimals: int = Field(default=QUANTITY_DECIMALS, ge=0, le=12)
+    stop_distance_mode: Literal["entry_or_spot_pct", "atr"] = "entry_or_spot_pct"
+    atr_period: int = Field(default=14, ge=2, le=500)
+    atr_multiplier: float = Field(default=1.0, gt=0.0, le=100.0)
+    max_notional_fraction_per_ticker: float = Field(
+        default=1.0,
+        gt=0.0,
+        le=10.0,
+        description="Cap per-ticker suggested size: min(cash, fraction * total_portfolio_value) "
+        "as position limit; 1.0 matches legacy 'cash only' cap when portfolio <= cash + holdings.",
+    )
+
+
+def risk_config_to_metadata(risk: RiskManagementConfig) -> Dict[str, Any]:
+    """Flatten risk settings for LangGraph metadata (JSON-serializable)."""
+    return {
+        "risk_per_trade_pct": risk.risk_per_trade_pct,
+        "risk_stop_loss_pct": risk.stop_loss_pct,
+        "risk_min_quantity": risk.min_quantity,
+        "risk_quantity_decimals": risk.quantity_decimals,
+        "risk_stop_distance_mode": risk.stop_distance_mode,
+        "risk_atr_period": risk.atr_period,
+        "risk_atr_multiplier": risk.atr_multiplier,
+        "risk_max_notional_fraction_per_ticker": risk.max_notional_fraction_per_ticker,
+    }
 
 
 class ModelConfig(BaseModel):
@@ -60,6 +101,8 @@ class Config(BaseSettings):
     auto_cleanup_files: bool = False
     file_retention_days: int = 30
     file_keep_latest: int = 10
+
+    risk: RiskManagementConfig = Field(default_factory=RiskManagementConfig)
 
     @model_validator(mode="before")
     @classmethod

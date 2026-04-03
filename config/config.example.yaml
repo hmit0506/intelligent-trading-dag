@@ -52,6 +52,17 @@ signals:
   tickers: ["BTCUSDT", "ETHUSDT"]  # Trading pairs to analyze
   strategies: ['MacdStrategy', 'RSIStrategy', 'BollingerStrategy']  # Trading strategies to use
 
+# Risk management (position sizing hints for RiskManagementNode; same for backtest/live/benchmark)
+risk:
+  risk_per_trade_pct: 0.02
+  stop_loss_pct: 0.05
+  min_quantity: 0.001
+  quantity_decimals: 3
+  stop_distance_mode: entry_or_spot_pct
+  atr_period: 14
+  atr_multiplier: 1.0
+  max_notional_fraction_per_ticker: 1.0
+
 # LLM model configuration
 model:
   name: "gpt-4o-mini"  # Model name (varies by provider)

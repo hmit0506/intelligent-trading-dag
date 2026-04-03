@@ -177,6 +177,17 @@ initial_positions:
 #     ETHUSDT:
 #       long: 2.0
 
+# Risk sizing (RiskManagementNode); omitted keys use defaults (see utils/config.py RiskManagementConfig)
+risk:
+  risk_per_trade_pct: 0.02
+  stop_loss_pct: 0.05
+  min_quantity: 0.001
+  quantity_decimals: 3
+  stop_distance_mode: entry_or_spot_pct  # or "atr" for ATR-based risk-per-unit
+  atr_period: 14
+  atr_multiplier: 1.0
+  max_notional_fraction_per_ticker: 1.0
+
 signals:
   intervals: ["1h", "4h"]  # All intervals to analyze. The primary_interval will be automatically included if not listed.
   tickers: ["BTCUSDT", "ETHUSDT"]
@@ -292,7 +303,7 @@ These provide *interpretable* references (passive and rule-based) rather than co
 
 **Purpose.** Phase 2 answers a *component necessity* question: if we **remove one design choice** from an otherwise identical pipeline, what happens? This is classic **single-factor ablation**: one toggle off per named run (plus `FullDAG` as the reference), so interactions between ablations are **not** explored unless you add combined experiments to `phase2_registry.py`.
 
-**Reference run: `FullDAG`.** Same as Phase 1 full strategy set with **default** `DAGAblationSettings`: multi-interval data path, LLM portfolio node, and full risk sizing (stop-loss–based quantity logic as implemented in `risk.py`).
+**Reference run: `FullDAG`.** Same as Phase 1 full strategy set with **default** `DAGAblationSettings`: multi-interval data path, LLM portfolio node, and full risk sizing (`risk.py`), using the same **`main.risk`** (or defaults) as a normal backtest when you use unified `benchmark.yaml`.
 
 **Ablations (what changes under the hood).**
 
@@ -300,7 +311,7 @@ These provide *interpretable* references (passive and rule-based) rather than co
 |------------|-----------|------------------------|
 | `Ablate_MultiInterval` | Remove auxiliary timeframes | `Backtester` passes only `primary_interval` into `Agent` / prefetch so the graph runs a single interval branch; strategies see one horizon instead of `signals.intervals`. |
 | `Ablate_LLMPortfolio` | Remove LLM fusion at the portfolio node | `PortfolioManagementNode` uses `generate_rule_based_trading_decision`: deterministic aggregation of **primary-interval** signals across agents, then fixed mapping to buy/sell/short/hold with sizing caps from risk + cash. |
-| `Ablate_RiskSizing` | Replace structured risk sizing | `RiskManagementNode` uses a **simplified** fixed fraction of portfolio value per ticker (no stop-loss gate in that branch). Portfolio and LLM paths stay enabled unless separately ablated. |
+| `Ablate_RiskSizing` | Replace structured risk sizing | `RiskManagementNode` uses a **simplified** fixed fraction per ticker (still reads **`risk`** numeric caps from config metadata). Portfolio and LLM paths stay enabled unless separately ablated. |
 
 Ablation flags are carried as `workflow_metadata` on `Agent` (`use_llm_portfolio`, `ablation_full_risk`) and as `DAGAblationSettings` on `Backtester` (`multi_interval`). See `benchmark/ablation.py`, `nodes/portfolio.py`, `nodes/risk.py`, `backtest/engine.py`.
 
@@ -477,6 +488,7 @@ See [FILE_MANAGEMENT.md](FILE_MANAGEMENT.md) for detailed file management docume
 See the Configuration section above for detailed examples. Key options include:
 
 - **Portfolio Initialization**: Sync from exchange or manual positions (cost basis auto-set)
+- **Risk (`risk`)**: Per-trade fraction, stop/ATR mode, quantity rounding, and per-ticker notional cap; merged into agent metadata so backtest, live, and benchmark `main` share the same knobs (`risk_config_to_metadata` in `utils/config.py`, implementation in `nodes/risk.py`)
 - **Performance Options**: Print frequency, progress bar, logging
 - **File Management**: Auto-cleanup, retention policies
 

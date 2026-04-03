@@ -55,6 +55,7 @@ def run_dag_backtest_experiment(
         log_file=None,
         initial_positions=getattr(config, "initial_positions", None),
         ablation=ablation,
+        risk_management=config.risk,
     )
     backtester.run_backtest()
 

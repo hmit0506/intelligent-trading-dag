@@ -14,6 +14,7 @@ from trading_dag.backtest.engine import Backtester
 from trading_dag.utils.helpers import format_live_results
 from trading_dag.utils.file_manager import OutputFileManager
 from trading_dag.utils.constants import Interval
+from trading_dag.utils.config import risk_config_to_metadata
 from trading_dag.data.provider import BinanceDataProvider
 from datetime import timedelta
 import pandas as pd
@@ -296,6 +297,7 @@ class TradingSystemRunner:
                 intervals=self.config.signals.intervals,
                 strategies=self.config.signals.strategies,
                 show_agent_graph=self.config.show_agent_graph,
+                workflow_metadata=risk_config_to_metadata(self.config.risk),
             )
         return self.agent
     
@@ -330,10 +332,12 @@ class TradingSystemRunner:
             model_name=self.config.model.name,
             model_provider=self.config.model.provider,
             model_base_url=self.config.model.base_url,
+            initial_margin_requirement=self.config.margin_requirement,
             print_frequency=getattr(self.config, 'print_frequency', 1),  # Default: print every iteration
             use_progress_bar=getattr(self.config, 'use_progress_bar', True),  # Default: use progress bar
             log_file=log_file if getattr(self.config, 'enable_logging', True) else None,
             initial_positions=getattr(self.config, 'initial_positions', None),  # Support initial positions in backtest
+            risk_management=self.config.risk,
         )
         
         print("Starting backtest...")

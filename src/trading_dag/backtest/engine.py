@@ -13,6 +13,7 @@ from trading_dag.utils.helpers import format_backtest_row, print_backtest_result
 from trading_dag.agent import Agent
 from trading_dag.benchmark.ablation import DAGAblationSettings
 from trading_dag.data.provider import BinanceDataProvider
+from trading_dag.utils.config import RiskManagementConfig, risk_config_to_metadata
 
 
 class Backtester:
@@ -36,6 +37,7 @@ class Backtester:
             log_file: Optional[str] = None,
             initial_positions: Optional[Dict[str, Any]] = None,
             ablation: Optional[DAGAblationSettings] = None,
+            risk_management: Optional[RiskManagementConfig] = None,
     ):
         """
         Backtester
@@ -56,6 +58,7 @@ class Backtester:
         self.primary_interval = primary_interval
         self.tickers = tickers
         self.ablation = ablation or DAGAblationSettings()
+        self.risk_management = risk_management or RiskManagementConfig()
         if not self.ablation.multi_interval:
             self.intervals = [primary_interval]
         else:
@@ -530,11 +533,13 @@ class Backtester:
         print()  # Empty line before backtest starts
 
         # print(self.portfolio_values)
+        workflow_metadata = dict(self.ablation.workflow_metadata())
+        workflow_metadata.update(risk_config_to_metadata(self.risk_management))
         agent = Agent(
             intervals=self.intervals,
             strategies=self.strategies,
             show_agent_graph=self.show_agent_graph,
-            workflow_metadata=self.ablation.workflow_metadata(),
+            workflow_metadata=workflow_metadata,
         )
         
         # Setup progress bar if enabled

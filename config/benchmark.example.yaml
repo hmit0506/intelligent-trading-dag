@@ -42,6 +42,17 @@ main:
   # Live-only feature, not needed in benchmark mode.
   sync_from_exchange: false
 
+  # Same schema as config.example.yaml "risk" (optional; defaults apply if omitted).
+  risk:
+    risk_per_trade_pct: 0.02
+    stop_loss_pct: 0.05
+    min_quantity: 0.001
+    quantity_decimals: 3
+    stop_distance_mode: entry_or_spot_pct
+    atr_period: 14
+    atr_multiplier: 1.0
+    max_notional_fraction_per_ticker: 1.0
+
   signals:
     intervals: ["1h", "4h"]
     tickers: ["BTCUSDT", "ETHUSDT"]

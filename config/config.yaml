@@ -46,6 +46,18 @@ auto_cleanup_files: false  # Automatically clean up old files
 file_retention_days: 30  # Delete files older than N days
 file_keep_latest: 10  # Always keep at least N latest files
 
+# Risk sizing for RiskManagementNode (optional; defaults match code if this block is omitted)
+# Same schema as config.example.yaml; benchmark main.risk should stay in sync for comparable runs.
+risk:
+  risk_per_trade_pct: 0.02
+  stop_loss_pct: 0.05
+  min_quantity: 0.001
+  quantity_decimals: 3
+  stop_distance_mode: entry_or_spot_pct
+  atr_period: 14
+  atr_multiplier: 1.0
+  max_notional_fraction_per_ticker: 1.0
+
 # Signal generation configuration
 signals:
   # Time intervals to analyze (primary_interval will be automatically included if not listed)

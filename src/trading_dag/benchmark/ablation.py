@@ -17,7 +17,9 @@ class DAGAblationSettings:
     - llm_portfolio: if False, portfolio decisions use deterministic rules
       from primary-interval signals instead of the LLM.
     - full_risk_sizing: if False, risk uses a simple fixed fraction of portfolio
-      per ticker without stop-loss gating.
+      per ticker (still uses ``main.risk`` / metadata parameters such as
+      ``risk_per_trade_pct`` and notional caps). If True, use full sizing with
+      ``stop_distance_mode`` (entry/spot percent or ATR) from the same config.
     """
 
     multi_interval: bool = True
