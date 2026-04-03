@@ -211,7 +211,7 @@ class TradingSystemRunner:
             portfolio: Current portfolio structure
             initial_positions: Dict with format:
                 {
-                    "cash": float,  # Optional, overrides initial_cash
+                    "cash": float,  # Optional; must align with config after load (see initial_positions.cash)
                     "positions": {
                         "BTCUSDT": {
                             "long": float,  # Optional

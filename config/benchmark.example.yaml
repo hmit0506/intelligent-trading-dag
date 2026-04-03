@@ -1,25 +1,45 @@
+# Unified benchmark configuration example.
+# Copy this file to benchmark.yaml and customize values.
+
 main:
+  # Must be backtest for phase1 benchmark runner.
   mode: backtest
 
+  # Backtest date range.
   start_date: 2025-01-01
   end_date: 2025-02-01
+
+  # Primary interval for decision weighting.
   primary_interval: 1h
 
-  initial_cash: 100000
   margin_requirement: 0.0
 
+  # Starting cash and optional holdings (same schema as config.yaml).
+  initial_positions:
+    cash: 100000
+  #   positions:
+  #     BTCUSDT:
+  #       long: 0.1
+  #       short: 0.0
+  #     ETHUSDT:
+  #       long: 2.0
+
+  # Keep false for faster benchmark execution.
   show_reasoning: false
   show_agent_graph: false
 
+  # Core backtester display/logging options.
   print_frequency: 1
   use_progress_bar: true
   enable_logging: true
   save_decision_history: false
 
+  # Optional output cleanup.
   auto_cleanup_files: false
   file_retention_days: 30
   file_keep_latest: 10
 
+  # Live-only feature, not needed in benchmark mode.
   sync_from_exchange: false
 
   signals:
@@ -28,6 +48,7 @@ main:
     strategies: ["MacdStrategy", "RSIStrategy", "BollingerStrategy"]
 
   model:
+    # Change based on your provider/API keys.
     name: "gpt-4o-mini"
     provider: "openai"
     base_url: null
@@ -35,13 +56,27 @@ main:
     format: "json"
 
 phase1:
+  # Baseline toggles.
   run_buy_and_hold: true
   run_equal_weight_rebalance: true
-  dag_print_frequency: 1000
-  dag_use_progress_bar: true
+
+  # DAG experiment output controls.
+  # Legacy-style verbose output:
+  # - print_frequency=1
+  # - no tqdm overlay
+  dag_print_frequency: 1
+  dag_use_progress_bar: false
+
+  # Leave empty to run all groups, or specify selected names.
   include_dag_experiments: []
   include_baseline_experiments: []
+
+  # Export separate CSV per experiment group.
   export_individual_results: false
+
+  # Rebalance cadence for EqualWeightRebalance baseline.
   rebalance_every_bars: 24
+
+  # Output directory for benchmark csv files.
   output_dir: "output"
 

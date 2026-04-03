@@ -11,9 +11,6 @@ end_date: 2025-02-01
 # Note: This interval will be automatically added to signals.intervals if not already present
 primary_interval: 1h
 
-# Initial capital for trading
-initial_cash: 100000
-
 # Margin requirement for short positions (0.0 = no margin)
 margin_requirement: 0.0
 
@@ -22,9 +19,10 @@ margin_requirement: 0.0
 sync_from_exchange: false  # Set to true to sync portfolio from Binance account
 
 # Option 2: Manual initial positions (works for both modes)
+# Starting cash: set under initial_positions.cash (recommended). Legacy top-level initial_cash is supported.
 # Note: Cost basis is automatically set using historical/real-time prices
-# initial_positions:
-#   cash: 100000  # Optional: override initial_cash
+initial_positions:
+  cash: 100000
 #   positions:
 #     BTCUSDT:
 #       long: 0.1  # Long position quantity

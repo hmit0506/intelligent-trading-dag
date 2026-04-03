@@ -1,33 +1,67 @@
+# Unified benchmark configuration.
+# - "main" controls backtest/trading-engine settings.
+# - "phase1" controls experiment orchestration for benchmark groups.
+
 main:
+  # Must stay "backtest" for phase1 benchmark.
   mode: backtest
 
+  # Backtest time window (inclusive by project behavior).
+  # Tip: use a short range first for quick validation.
   start_date: 2025-01-01
-  end_date: 2025-02-01
+  end_date: 2025-01-02
+
+  # Main decision interval. Must be one of project-supported intervals.
+  # Common values: 1h, 4h, 1d
   primary_interval: 1h
 
-  initial_cash: 100000
+  # Margin requirement for short positions (0.0 = no margin).
   margin_requirement: 0.0
 
+  # Portfolio initialization (same structure as config.yaml).
+  # Starting cash: initial_positions.cash (single source; legacy top-level initial_cash still supported).
+  initial_positions:
+    cash: 50000
+    positions:
+      BTCUSDT:
+        long: 0.1
+        short: 0.0
+      ETHUSDT:
+        long: 20
+
+  # Debug/visual outputs from core pipeline.
+  # Keep false for faster benchmark runs.
   show_reasoning: false
   show_agent_graph: false
 
+  # Core backtester output frequency.
+  # This is separate from phase1 "dag_print_frequency".
   print_frequency: 1
   use_progress_bar: true
   enable_logging: true
   save_decision_history: false
 
+  # Output cleanup policy.
   auto_cleanup_files: false
   file_retention_days: 30
   file_keep_latest: 10
 
+  # Live-only feature; should stay false for benchmark.
   sync_from_exchange: false
 
   signals:
+    # Multi-timeframe inputs for strategies.
     intervals: ["1h", "4h"]
+
+    # Assets to benchmark on.
     tickers: ["BTCUSDT", "ETHUSDT"]
+
+    # Default full-DAG strategy set.
     strategies: ["MacdStrategy", "RSIStrategy", "BollingerStrategy"]
 
   model:
+    # Example: DeepSeek through OpenAI-compatible endpoint.
+    # You can also switch to other providers/models supported by project.
     name: "deepseek-chat"
     provider: "openai"
     base_url: "https://api.deepseek.com/v1"
@@ -35,13 +69,32 @@ main:
     format: "json"
 
 phase1:
+  # Baseline toggles.
   run_buy_and_hold: true
   run_equal_weight_rebalance: true
-  dag_print_frequency: 1000
-  dag_use_progress_bar: true
-  include_dag_experiments: []
+
+  # Benchmark DAG output verbosity:
+  # - 1 shows full backtest table output (same style as legacy behavior)
+  # - larger value reduces table refresh frequency
+  dag_print_frequency: 1
+
+  # Keep false to preserve legacy table-style output without tqdm overlay.
+  dag_use_progress_bar: false
+
+  # Optional selective runs. Empty list means "run all available".
+  # Valid DAG names: FullDAG, SingleMACD, SingleRSI, SingleBollinger
+  include_dag_experiments: ["FullDAG", "SingleMACD", "SingleRSI", "SingleBollinger"]
+
+  # Valid baseline names: BuyAndHold, EqualWeightRebalance
   include_baseline_experiments: []
+
+  # If true, export per-experiment summary/equity CSV files in addition to combined outputs.
   export_individual_results: false
+
+  # Rebalance frequency for EqualWeightRebalance baseline (in bars of primary_interval).
+  # Example: primary_interval=1h and rebalance_every_bars=24 means rebalance daily.
   rebalance_every_bars: 24
+
+  # Output folder for benchmark artifacts.
   output_dir: "output"
 

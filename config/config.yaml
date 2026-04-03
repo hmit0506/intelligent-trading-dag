@@ -9,9 +9,6 @@ end_date: 2026-01-02
 # Note: This interval will be automatically added to signals.intervals if not already present
 primary_interval: 1h
 
-# Initial capital for trading
-initial_cash: 50000
-
 # Margin requirement for short positions (0.0 = no margin)
 margin_requirement: 0.0
 
@@ -20,12 +17,13 @@ margin_requirement: 0.0
 sync_from_exchange: false  # Set to true to sync portfolio from Binance account
 
 # Option 2: Manual initial positions (works for both live and backtest modes)
+# Starting cash is set here (single source; legacy top-level initial_cash is still supported for old configs).
 # Note: Cost basis is automatically set using historical/real-time prices
 # - Backtest mode: Uses price at start_date
 # - Live mode: Uses current market price
 # This ensures accurate evaluation of trading framework performance
 initial_positions:
-  cash: 50000  # Optional: override initial_cash
+  cash: 50000
   positions:
     BTCUSDT:
       long: 0.1  # Long position quantity

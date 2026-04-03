@@ -105,7 +105,7 @@ def run_phase1_benchmarks(
             baseline_curve = spec.simulator(
                 tickers=config.signals.tickers,
                 klines=klines,
-                initial_cash=config.initial_cash,
+                initial_cash=float(config.initial_cash),
                 **spec.kwargs,
             )
             baseline_metrics = build_equity_metrics(baseline_curve)

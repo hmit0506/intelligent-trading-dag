@@ -314,7 +314,9 @@ class Backtester:
         
         # Calculate the date range for backtest
         date_range = self.end_date - self.start_date
-        end_date_inclusive = self.end_date + timedelta(days=1) - timedelta(seconds=1)
+        # Keep fetch end_time aligned with backtest filter boundary (<= self.end_date)
+        # to avoid interval shifts caused by inconsistent end_time definitions.
+        fetch_end_time = self.end_date
         
         print(f"Backtest date range: {self.start_date} to {self.end_date} ({date_range})")
         
@@ -329,11 +331,11 @@ class Backtester:
                 
                 print(f"  {ticker} {interval.value}: Backtest range needs ~{required_k_lines} K-lines, fetching {k_lines_to_fetch} K-lines")
                 
-                # Fetch data ending at end_date
+                # Fetch data ending at the same boundary used by iteration filtering.
                 data = self.binance_data_provider.get_history_klines_with_end_time(
                     symbol=ticker,
                     timeframe=interval.value,
-                    end_time=end_date_inclusive,
+                    end_time=fetch_end_time,
                     limit=k_lines_to_fetch
                 )
                 
@@ -395,7 +397,7 @@ class Backtester:
         # This allows backtesting with existing positions
         if hasattr(self, 'initial_positions') and self.initial_positions:
             from datetime import datetime
-            from data.provider import BinanceDataProvider
+            from trading_dag.data.provider import BinanceDataProvider
             from colorama import Fore, Style
             
             # Get prices at start_date for cost basis calculation

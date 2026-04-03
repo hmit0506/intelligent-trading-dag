@@ -4,7 +4,7 @@ Configuration management.
 from pydantic_settings import BaseSettings
 from pydantic import BaseModel, ConfigDict, model_validator
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 import yaml
 from pathlib import Path
 
@@ -46,6 +46,7 @@ class Config(BaseSettings):
     end_date: datetime
     primary_interval: Interval
     initial_cash: float
+    initial_positions: Optional[Any] = None
     margin_requirement: float = 0.0
     show_reasoning: bool = False
     show_agent_graph: bool = True
@@ -59,6 +60,41 @@ class Config(BaseSettings):
     auto_cleanup_files: bool = False
     file_retention_days: int = 30
     file_keep_latest: int = 10
+
+    @model_validator(mode="before")
+    @classmethod
+    def merge_portfolio_cash(cls, data: Any) -> Any:
+        """
+        Single source of truth for starting cash: prefer initial_positions.cash.
+
+        YAML may omit top-level initial_cash when initial_positions.cash is set.
+        For backward compatibility, legacy initial_cash-only configs still work.
+        If both are set to different numbers, validation fails to avoid silent mismatch.
+        """
+        if not isinstance(data, dict):
+            return data
+        initial_positions = data.get("initial_positions")
+        top_raw = data.get("initial_cash")
+        cash_from_positions: Optional[float] = None
+        if isinstance(initial_positions, dict) and initial_positions.get("cash") is not None:
+            cash_from_positions = float(initial_positions["cash"])
+        top_cash: Optional[float] = float(top_raw) if top_raw is not None else None
+
+        if cash_from_positions is not None and top_cash is not None and cash_from_positions != top_cash:
+            raise ValueError(
+                "initial_cash and initial_positions.cash disagree; remove initial_cash and use only "
+                "initial_positions.cash, or make them the same."
+            )
+
+        resolved = cash_from_positions if cash_from_positions is not None else top_cash
+        if resolved is None:
+            raise ValueError(
+                "Portfolio starting cash is required: set initial_positions.cash "
+                "(recommended) or legacy initial_cash."
+            )
+
+        merged = {**data, "initial_cash": float(resolved)}
+        return merged
 
     @model_validator(mode='after')
     def validate_primary_interval(self):

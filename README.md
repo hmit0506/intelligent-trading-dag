@@ -146,7 +146,6 @@ mode: backtest  # or "live"
 start_date: 2025-01-01
 end_date: 2025-02-01
 primary_interval: 1h  # Primary interval for decision-making. Automatically added to signals.intervals if not present. LLM prioritizes signals from this interval.
-initial_cash: 100000
 margin_requirement: 0.0
 show_reasoning: false
 show_agent_graph: true
@@ -167,9 +166,10 @@ file_keep_latest: 10         # Always keep at least N latest files
 sync_from_exchange: false  # Set to true to sync portfolio from Binance account
 
 # Option 2: Manual initial positions (works for both live and backtest modes)
+# Starting cash belongs in initial_positions.cash (legacy top-level initial_cash is still accepted).
 # Note: Cost basis is automatically set using historical/real-time prices
-# initial_positions:
-#   cash: 100000  # Optional: override initial_cash
+initial_positions:
+  cash: 100000
 #   positions:
 #     BTCUSDT:
 #       long: 0.1  # Long position quantity

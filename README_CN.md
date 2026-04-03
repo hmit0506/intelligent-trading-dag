@@ -144,7 +144,6 @@ mode: backtest  # 或 "live"
 start_date: 2025-01-01
 end_date: 2025-02-01
 primary_interval: 1h  # 决策的主要间隔。如果未在signals.intervals中列出，将自动添加。LLM优先考虑此间隔的信号。
-initial_cash: 100000
 margin_requirement: 0.0
 show_reasoning: false
 show_agent_graph: true
@@ -165,9 +164,10 @@ file_keep_latest: 10         # 至少保留N个最新文件
 sync_from_exchange: false  # 设置为true以从币安账户同步投资组合
 
 # 选项2：手动初始持仓（回测和实盘模式都支持）
+# 起始现金写在 initial_positions.cash（仍兼容旧版顶层 initial_cash）。
 # 注意：成本基础自动使用历史/实时价格设置
-# initial_positions:
-#   cash: 100000  # 可选：覆盖initial_cash
+initial_positions:
+  cash: 100000
 #   positions:
 #     BTCUSDT:
 #       long: 0.1  # 多头持仓数量
