@@ -57,6 +57,9 @@ Thumbs.db
 graph.png
 *_graph.png
 
+# Local documentation (personal reference only; not pushed to GitHub)
+docs/
+
 # Cursor IDE (these files ARE tracked and will be pushed - they're useful for team)
 # .cursorignore - IDE ignore patterns (useful for team)
 # .cursorrules - Code style rules (useful for team)

@@ -305,7 +305,7 @@ These provide *interpretable* references (passive and rule-based) rather than co
 
 **Code layout.**
 
-- `run_phase1_benchmarks` — Phase-specific orchestration (`phase1.py`); shared CSV/baseline logic lives in `suite_common.py`.
+- `run_phase1_benchmarks` — Phase-specific orchestration (`phase1.py`); shared CSV/baseline logic lives in `suite_common.py`. Phase CLIs share `cli/benchmark_cli_common.py`.
 - `phase1_registry.py` — Named experiments → strategy lists.
 - `dag_backtest_runner.run_dag_backtest_experiment` — Invokes `Backtester` (phase 1 passes default ablation = full pipeline).
 - `baseline_simulators.py` / `prepare_primary_klines` — Passive baseline paths and data prep.
@@ -314,10 +314,11 @@ These provide *interpretable* references (passive and rule-based) rather than co
 **Operational notes.**
 
 - Single orchestration entry: `run_phase1_benchmarks(...)`.
-- Config: `config/benchmark.yaml` → `main` + `phase1` (mode must be `backtest`).
+- Config: `config/benchmark.yaml` → `main` + `phase1` (mode must be `backtest`). Optional `--benchmark-config` YAML merges into `phase1` (legacy).
 - Noise control: `phase1.dag_print_frequency`, `dag_use_progress_bar`.
-- Subsets: `include_dag_experiments`, `include_baseline_experiments`; per-run CSV: `export_individual_results`.
-- **Outputs:** `output/benchmark_phase1_summary_YYYYMMDD_HHMMSS.csv`, `output/benchmark_phase1_equity_YYYYMMDD_HHMMSS.csv`.
+- **Experiment lists:** `include_dag_experiments` / `include_baseline_experiments` — list **comparison** names only; **`FullDAG` is always run first** and need not appear in YAML (an explicit `FullDAG` entry is ignored). Empty `include_dag_experiments` runs FullDAG plus **all** single-strategy variants.
+- Exports: `export_individual_results` (per-experiment CSVs); `export_charts` (comparison PNGs: absolute equity overlay, normalized equity, total-return bars). CLI printing of paths is shared via `cli/benchmark_cli_common.py`.
+- **Outputs (minimum):** `output/benchmark_phase1_summary_*.csv`, `benchmark_phase1_equity_*.csv`. Prefixes and chart types are printed at the end of a run and match `benchmark/phase1.py` / `figures.export_benchmark_figures`.
 
 **Reporting caveats.** LLM portfolio decisions can vary with provider, temperature (kept at 0 in examples but still subject to API behavior), and prompt drift. Single-strategy runs still use the same **RiskManagementNode / portfolio** stack as FullDAG ([Risk management](#risk-management)), so they test “strategy set” rather than “raw indicator in isolation.” Baselines do not consume the DAG at all — differences in level or shape of equity are expected.
 
@@ -348,12 +349,13 @@ Ablation flags: `workflow_metadata` on `Agent` (`use_llm_portfolio`, `ablation_f
 - `DAGAblationSettings` — `benchmark/ablation.py`
 - Experiment list — `benchmark/phase2_registry.py`
 - One backtest per spec — `dag_backtest_runner.run_dag_backtest_experiment` (with `ablation=` set)
-- Runner — `benchmark/phase2.py`; CLI — `cli/benchmark_phase2.py`
+- Runner — `benchmark/phase2.py`; CLI — `cli/benchmark_phase2.py`, `cli/benchmark_cli_common.py`
 
 **Operational notes.**
 
-- Config: `config/benchmark.yaml` → `phase2` (empty `include_ablation_experiments` runs all registered ablations).
-- **Outputs:** `output/benchmark_phase2_summary_*.csv`, `output/benchmark_phase2_equity_*.csv`.
+- Config: `config/benchmark.yaml` → `phase2`; optional `--benchmark-config` merges into `phase2`. Empty `include_ablation_experiments` runs FullDAG plus **all** registered ablations. Non-empty lists **comparison** ablations only — **`FullDAG` is always prepended**; explicit `FullDAG` in the list is ignored.
+- Same export switches as phase 1: `export_individual_results`, `export_charts` (see phase 1 notes above).
+- **Outputs (minimum):** `output/benchmark_phase2_summary_*.csv`, `benchmark_phase2_equity_*.csv`.
 
 **Reporting caveats.** Rule-based portfolio ablation is a **deliberately simple** policy for reproducibility, not a claim of best non-LLM execution. Simplified risk (`Ablate_RiskSizing`) drops the stop/ATR distance in sizing — say so when discussing drawdowns or turnover ([Risk management](#risk-management)). For publication-grade claims, add multi-seed or multi-window evaluation outside this README.
 

@@ -1,20 +1,20 @@
 # Unified benchmark configuration example.
 # Copy this file to benchmark.yaml and customize values.
+# Tip: copy "main" from config/config.yaml (or config.example.yaml) so FullDAG matches your
+# usual backtest; keep mode: backtest here (phase CLIs reject live).
 
 main:
-  # Must be backtest for phase1 benchmark runner.
   mode: backtest
 
-  # Backtest date range.
   start_date: 2025-01-01
   end_date: 2025-02-01
 
-  # Primary interval for decision weighting.
   primary_interval: 1h
 
   margin_requirement: 0.0
 
-  # Starting cash and optional holdings (same schema as config.yaml).
+  sync_from_exchange: false
+
   initial_positions:
     cash: 100000
   #   positions:
@@ -24,23 +24,17 @@ main:
   #     ETHUSDT:
   #       long: 2.0
 
-  # Keep false for faster benchmark execution.
   show_reasoning: false
-  show_agent_graph: false
+  show_agent_graph: true
 
-  # Core backtester display/logging options.
   print_frequency: 1
   use_progress_bar: true
   enable_logging: true
-  save_decision_history: false
+  save_decision_history: true
 
-  # Optional output cleanup.
   auto_cleanup_files: false
   file_retention_days: 30
   file_keep_latest: 10
-
-  # Live-only feature, not needed in benchmark mode.
-  sync_from_exchange: false
 
   # Same schema as config.example.yaml "risk" (optional; defaults apply if omitted).
   risk:

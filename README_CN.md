@@ -303,7 +303,7 @@ uv run python -m trading_dag.cli.benchmark_phase2 --config config/benchmark.yaml
 
 **代码结构。** `phase1.py` 负责 Phase 1 编排；共享的基线执行与 CSV 导出在 `suite_common.py`。`phase1_registry.py` 定义实验名与策略列表；单次 DAG 回测通过 `dag_backtest_runner.run_dag_backtest_experiment`（Phase 1 使用默认完整管线）。基线与 K 线准备见 `baseline_simulators.py`。结果类型见 `experiment_types.py`；历史模块名 `phase1_models` / `phase1_metrics` / `phase1_baselines` 仍为兼容重导出。
 
-**使用提示。** 编排入口 `run_phase1_benchmarks(...)`；配置用 `config/benchmark.yaml` 的 `main` + `phase1`（须 `mode: backtest`）；`phase1.dag_print_frequency` / `dag_use_progress_bar` 控制日志；`include_dag_experiments`、`include_baseline_experiments` 可选子集；`export_individual_results` 可逐实验导出。**输出：** `output/benchmark_phase1_summary_*.csv`、`benchmark_phase1_equity_*.csv`。
+**使用提示。** 编排入口 `run_phase1_benchmarks(...)`；配置用 `config/benchmark.yaml` 的 `main` + `phase1`（须 `mode: backtest`）；可选用 `--benchmark-config` 覆盖合并到 `phase1`（旧习惯）。`phase1.dag_print_frequency` / `dag_use_progress_bar` 控制日志。**列表**：`include_*` 只写**对照**实验名；**`FullDAG` 始终自动先跑**，不必写进 YAML（写了也会被忽略）。`include_dag_experiments` 留空则跑 FullDAG + 全部单策略变体。`export_individual_results` 导出逐实验 CSV；`export_charts` 导出对比 PNG（绝对权益、归一化权益、总收益柱）。路径打印逻辑在 `cli/benchmark_cli_common.py`。运行结束时会打印各 CSV/PNG 路径；图表类型与 `figures.export_benchmark_figures` 一致。**最小产物：** `benchmark_phase1_summary_*.csv`、`benchmark_phase1_equity_*.csv`。
 
 **写作注意。** LLM 组合层仍受提供商、账户与提示词版本影响（示例中温度常为 0，但仍非数学确定性）。单策略跑法仍经过相同的 **RiskManagementNode + 组合层**（见 [风险管理](#风险管理)），对比的是「策略集合」而非「裸指标脚本」。基线完全不执行 DAG，权益曲线形态与 DAG 实验不可直接等同。
 
@@ -329,9 +329,9 @@ uv run python -m trading_dag.cli.benchmark_phase2 --config config/benchmark.yaml
 
 **与 LLM 账户的关系。** `FullDAG`、`Ablate_MultiInterval`、`Ablate_RiskSizing` 在组合层仍会调 LLM（除非你再改 registry）；需可用 API 与余额。`Ablate_LLMPortfolio`**不在组合层调 LLM**（策略本身仍为规则/指标），适合无余额时的管线调试，但**不能**代表「完整智能组合」对照。
 
-**代码结构。** `ablation.py`（设置）、`phase2_registry.py`（实验表）、`dag_backtest_runner`（单次回测，传入 `ablation=`）、`phase2.py`（编排）、`cli/benchmark_phase2.py`（命令行）。
+**代码结构。** `ablation.py`（设置）、`phase2_registry.py`（实验表）、`dag_backtest_runner`（单次回测，传入 `ablation=`）、`phase2.py`（编排）、`cli/benchmark_phase2.py` 与 `cli/benchmark_cli_common.py`。
 
-**使用提示。** `config/benchmark.yaml` 的 `phase2`；`include_ablation_experiments` 留空则跑注册表全部。**输出：** `benchmark_phase2_summary_*.csv`、`benchmark_phase2_equity_*.csv`。
+**使用提示。** `config/benchmark.yaml` 的 `phase2`；可选用 `--benchmark-config` 合并覆盖。`include_ablation_experiments` 留空则 **FullDAG + 全部** `Ablate_*`；非空则只列消融名，**FullDAG 仍会自动前置**，列表中的 `FullDAG` 写与不写均被忽略。`export_individual_results`、`export_charts` 与 Phase 1 相同（见上节）。**最小产物：** `benchmark_phase2_summary_*.csv`、`benchmark_phase2_equity_*.csv`。
 
 **写作注意。** 规则组合是为了**可复现、单因素解释**，不是宣称最优非 LLM 策略；`Ablate_RiskSizing` 去掉止损/ATR 距离假设，须在讨论中说明（[风险管理](#风险管理)）。若面向发表级结论，建议在 README 方法之外增加多样本、多区间或敏感性分析。
 
