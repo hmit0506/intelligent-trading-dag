@@ -31,7 +31,10 @@ class PortfolioManagementNode(BaseNode):
 
         for ticker in tickers:
             risk_data = analyst_signals.get("risk_management_agent", {}).get(ticker, {})
-            position_limits[ticker] = risk_data.get("remaining_position_limit", 0.0)
+            lim = float(risk_data.get("remaining_position_limit", 0.0))
+            if lim <= 0.0:
+                lim = float(portfolio.get("cash", 0.0))
+            position_limits[ticker] = lim
             current_prices[ticker] = risk_data.get("current_price", 0.0)
             suggested_quantities[ticker] = risk_data.get("suggested_quantity", 0.0)
 
@@ -52,20 +55,32 @@ class PortfolioManagementNode(BaseNode):
         primary_interval = data.get("primary_interval")
         primary_interval_str = primary_interval.value if primary_interval and hasattr(primary_interval, 'value') else (str(primary_interval) if primary_interval else None)
 
-        result = generate_trading_decision(
-            tickers=tickers,
-            signals_by_ticker=signals_by_ticker,
-            current_prices=current_prices,
-            max_shares=max_shares,
-            suggested_quantities=suggested_quantities,
-            portfolio=portfolio,
-            model_name=state["metadata"]["model_name"],
-            model_provider=state["metadata"]["model_provider"],
-            model_base_url=state["metadata"]["model_base_url"],
-            future_timepoints=future_timepoints,
-            intervals=interval_strings,
-            primary_interval=primary_interval_str,
-        )
+        use_llm = bool(state["metadata"].get("use_llm_portfolio", True))
+        if use_llm:
+            result = generate_trading_decision(
+                tickers=tickers,
+                signals_by_ticker=signals_by_ticker,
+                current_prices=current_prices,
+                max_shares=max_shares,
+                suggested_quantities=suggested_quantities,
+                portfolio=portfolio,
+                model_name=state["metadata"]["model_name"],
+                model_provider=state["metadata"]["model_provider"],
+                model_base_url=state["metadata"]["model_base_url"],
+                future_timepoints=future_timepoints,
+                intervals=interval_strings,
+                primary_interval=primary_interval_str,
+            )
+        else:
+            result = generate_rule_based_trading_decision(
+                tickers=tickers,
+                signals_by_ticker=signals_by_ticker,
+                current_prices=current_prices,
+                max_shares=max_shares,
+                suggested_quantities=suggested_quantities,
+                portfolio=portfolio,
+                primary_interval=primary_interval_str,
+            )
 
         message = HumanMessage(
             content=json.dumps(result.get("decisions", {})),
@@ -79,6 +94,94 @@ class PortfolioManagementNode(BaseNode):
             "messages": [message],
             "data": state["data"],
         }
+
+
+def _signal_direction_score(signal: str) -> float:
+    label = str(signal).lower()
+    if label in ("bullish", "buy", "long"):
+        return 1.0
+    if label in ("bearish", "sell", "short"):
+        return -1.0
+    return 0.0
+
+
+def generate_rule_based_trading_decision(
+    tickers: List[str],
+    signals_by_ticker: Dict[str, Dict[str, Any]],
+    current_prices: Dict[str, float],
+    max_shares: Dict[str, float],
+    suggested_quantities: Dict[str, float],
+    portfolio: Dict[str, Any],
+    primary_interval: Optional[str],
+) -> Dict[str, Any]:
+    """
+    Deterministic portfolio policy using primary-interval strategy votes only.
+
+    Used when LLM portfolio decisions are disabled (ablation). Behavior is intentionally
+    simple so results stay reproducible and comparable to the LLM path.
+    """
+    decisions: Dict[str, Any] = {}
+    threshold = 0.12
+
+    for ticker in tickers:
+        per_agent = signals_by_ticker.get(ticker, {})
+        weighted = 0.0
+        weight_sum = 0.0
+        for _, interval_map in per_agent.items():
+            if not isinstance(interval_map, dict):
+                continue
+            if primary_interval and primary_interval in interval_map:
+                block = interval_map[primary_interval]
+            elif interval_map:
+                block = next(iter(interval_map.values()))
+            else:
+                block = {}
+            if not isinstance(block, dict):
+                continue
+            conf = float(block.get("confidence", 50.0)) / 100.0
+            weighted += _signal_direction_score(str(block.get("signal", "neutral"))) * conf
+            weight_sum += 1.0
+
+        net_score = (weighted / weight_sum) if weight_sum > 0 else 0.0
+        price = float(current_prices.get(ticker, 0.0))
+        cash = float(portfolio.get("cash", 0.0))
+        pos = portfolio.get("positions", {}).get(ticker, {})
+        long_amt = float(pos.get("long", 0.0))
+        suggested = float(suggested_quantities.get(ticker, 0.0))
+        max_sh = float(max_shares.get(ticker, 0.0))
+        affordable = cash / price if price > 0 else 0.0
+        if max_sh <= 0.0:
+            max_sh = affordable
+
+        action = "hold"
+        quantity = 0.0
+        if net_score > threshold:
+            action = "buy"
+            raw_qty = suggested if suggested > 0 else affordable * 0.1
+            quantity = min(max(raw_qty, 0.0), max_sh, affordable)
+        elif net_score < -threshold:
+            if long_amt > 1e-9:
+                action = "sell"
+                quantity = min(long_amt, max(long_amt * 0.5, 0.0))
+            else:
+                action = "short"
+                raw_qty = suggested if suggested > 0 else affordable * 0.05
+                cap = max_sh * 0.5 if max_sh > 0 else affordable * 0.25
+                quantity = min(max(raw_qty, 0.0), cap)
+
+        decisions[ticker] = {
+            "now": {
+                "action": action,
+                "quantity": float(max(0.0, quantity)),
+                "confidence": float(min(95.0, 50.0 + abs(net_score) * 45.0)),
+                "reasoning": (
+                    f"Rule-based aggregate on primary_interval={primary_interval}, "
+                    f"net_score={net_score:.3f}"
+                ),
+            }
+        }
+
+    return {"decisions": decisions}
 
 
 def generate_trading_decision(

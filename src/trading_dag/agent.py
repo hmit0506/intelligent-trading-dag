@@ -13,7 +13,13 @@ from trading_dag.utils.helpers import save_graph_as_png, parse_str_to_json
 class Agent:
     """Main trading agent that orchestrates the DAG workflow."""
 
-    def __init__(self, intervals: List[Interval], strategies: List[str], show_agent_graph: bool = True):
+    def __init__(
+        self,
+        intervals: List[Interval],
+        strategies: List[str],
+        show_agent_graph: bool = True,
+        workflow_metadata: Optional[Dict[str, Any]] = None,
+    ):
         """
         Initialize the agent with workflow configuration.
 
@@ -21,10 +27,12 @@ class Agent:
             intervals: List of time intervals to analyze
             strategies: List of strategy names to use
             show_agent_graph: Whether to save workflow graph visualization
+            workflow_metadata: Extra entries merged into LangGraph state metadata (e.g. ablation flags)
         """
         workflow = Workflow.create_workflow(intervals=intervals, strategies=strategies)
         self.intervals = intervals
         self.strategies = strategies
+        self.workflow_metadata = workflow_metadata or {}
         self.agent = workflow.compile()
 
         if show_agent_graph:
@@ -75,6 +83,16 @@ class Agent:
         if prefetched_data is not None:
             data_dict["prefetched_data"] = prefetched_data
 
+        metadata = {
+            "show_reasoning": show_reasoning,
+            "model_name": model_name,
+            "model_provider": model_provider,
+            "model_base_url": model_base_url,
+            "use_llm_portfolio": True,
+            "ablation_full_risk": True,
+        }
+        metadata.update(self.workflow_metadata)
+
         final_state = self.agent.invoke({
             "messages": [
                 HumanMessage(
@@ -82,12 +100,7 @@ class Agent:
                 )
             ],
             "data": data_dict,
-            "metadata": {
-                "show_reasoning": show_reasoning,
-                "model_name": model_name,
-                "model_provider": model_provider,
-                "model_base_url": model_base_url,
-            },
+            "metadata": metadata,
         })
 
         return {

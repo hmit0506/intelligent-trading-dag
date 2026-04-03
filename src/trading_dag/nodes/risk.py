@@ -24,20 +24,43 @@ class RiskManagementNode(BaseNode):
 
         risk_analysis = {}
         current_prices = {}
+        full_risk = bool(state["metadata"].get("ablation_full_risk", True))
 
         for ticker in tickers:
             price_df = data.get(f"{ticker}_{primary_interval.value}")
             current_price = price_df["close"].iloc[-1]
             current_prices[ticker] = current_price
 
-            risk_per_trade_pct = 0.02
-            stop_loss_pct = 0.05
-            stop_loss_price = current_price * (1 - stop_loss_pct)
-
             total_portfolio_value = portfolio["cash"]
             for t, pos_data in portfolio["positions"].items():
                 total_portfolio_value += pos_data["long"] * current_prices.get(t, 0.0)
                 total_portfolio_value -= pos_data["short"] * current_prices.get(t, 0.0)
+
+            risk_per_trade_pct = 0.02
+            if not full_risk:
+                quantity_to_trade = 0.0
+                if current_price > 0:
+                    quantity_to_trade = (total_portfolio_value * risk_per_trade_pct) / current_price
+                quantity_to_trade = max(0.0, round(quantity_to_trade, 0))
+                min_quantity = 0.001
+                if quantity_to_trade > 0 and quantity_to_trade < min_quantity:
+                    quantity_to_trade = min_quantity
+                risk_analysis[ticker] = {
+                    "suggested_quantity": float(quantity_to_trade),
+                    "current_price": float(current_price),
+                    "remaining_position_limit": float(portfolio["cash"]),
+                    "reasoning": {
+                        "mode": "simplified_fixed_fraction",
+                        "portfolio_value": float(total_portfolio_value),
+                        "risk_per_trade_pct": float(risk_per_trade_pct),
+                        "calculated_quantity": float(quantity_to_trade),
+                        "available_cash": float(portfolio["cash"]),
+                    },
+                }
+                continue
+
+            stop_loss_pct = 0.05
+            stop_loss_price = current_price * (1 - stop_loss_pct)
 
             quantity_to_trade = 0.0
             if current_price > stop_loss_price:
@@ -52,6 +75,7 @@ class RiskManagementNode(BaseNode):
             risk_analysis[ticker] = {
                 "suggested_quantity": float(quantity_to_trade),
                 "current_price": float(current_price),
+                "remaining_position_limit": float(portfolio["cash"]),
                 "reasoning": {
                     "portfolio_value": float(total_portfolio_value),
                     "risk_per_trade_pct": float(risk_per_trade_pct),

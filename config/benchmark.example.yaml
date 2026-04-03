@@ -80,3 +80,16 @@ phase1:
   # Output directory for benchmark csv files.
   output_dir: "output"
 
+phase2:
+  # Ablation benchmark (full DAG vs removing one subsystem at a time).
+  dag_print_frequency: 1
+  dag_use_progress_bar: false
+  run_buy_and_hold: false
+  run_equal_weight_rebalance: false
+  rebalance_every_bars: 24
+  # FullDAG, Ablate_MultiInterval, Ablate_LLMPortfolio, Ablate_RiskSizing
+  include_ablation_experiments: []
+  include_baseline_experiments: []
+  export_individual_results: false
+  output_dir: "output"
+

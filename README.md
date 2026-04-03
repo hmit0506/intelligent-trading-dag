@@ -239,6 +239,15 @@ python run.py --benchmark-phase1
 uv run python -m trading_dag.cli.benchmark_phase1 --config config/benchmark.yaml
 ```
 
+4. **Run Phase 2 benchmark suite** (DAG ablations: turn off one subsystem at a time vs full pipeline):
+```bash
+uv run python run.py --benchmark-phase2
+# or
+python run.py --benchmark-phase2
+
+uv run python -m trading_dag.cli.benchmark_phase2 --config config/benchmark.yaml
+```
+
 ### Phase 1 Benchmark Notes
 
 - **Unified call**: `run_phase1_benchmarks(...)` is the single orchestration entry.
@@ -252,6 +261,12 @@ uv run python -m trading_dag.cli.benchmark_phase1 --config config/benchmark.yaml
 - **Outputs**:
   - `output/benchmark_phase1_summary_YYYYMMDD_HHMMSS.csv`
   - `output/benchmark_phase1_equity_YYYYMMDD_HHMMSS.csv`
+
+### Phase 2 Benchmark Notes (ablations)
+
+- **Orchestration**: `run_phase2_benchmarks(...)`; experiments listed in `phase2_registry.py` (`FullDAG`, `Ablate_MultiInterval`, `Ablate_LLMPortfolio`, `Ablate_RiskSizing`).
+- **Config**: `phase2` section in `config/benchmark.yaml` (optional baselines reuse phase1 simulators).
+- **Outputs**: `benchmark_phase2_summary_*.csv`, `benchmark_phase2_equity_*.csv`.
 
 ### Output Files
 

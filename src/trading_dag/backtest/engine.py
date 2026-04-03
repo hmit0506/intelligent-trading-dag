@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from trading_dag.utils.constants import Interval, QUANTITY_DECIMALS, RISK_FREE_RATE_ANNUAL
 from trading_dag.utils.helpers import format_backtest_row, print_backtest_results
 from trading_dag.agent import Agent
+from trading_dag.benchmark.ablation import DAGAblationSettings
 from trading_dag.data.provider import BinanceDataProvider
 
 
@@ -33,7 +34,8 @@ class Backtester:
             print_frequency: int = 1,
             use_progress_bar: bool = True,
             log_file: Optional[str] = None,
-            initial_positions: Optional[Dict[str, Any]] = None
+            initial_positions: Optional[Dict[str, Any]] = None,
+            ablation: Optional[DAGAblationSettings] = None,
     ):
         """
         Backtester
@@ -53,7 +55,11 @@ class Backtester:
         """
         self.primary_interval = primary_interval
         self.tickers = tickers
-        self.intervals = intervals
+        self.ablation = ablation or DAGAblationSettings()
+        if not self.ablation.multi_interval:
+            self.intervals = [primary_interval]
+        else:
+            self.intervals = list(intervals)
         self.start_date = start_date
         self.end_date = end_date
         self.initial_capital = initial_capital
@@ -528,6 +534,7 @@ class Backtester:
             intervals=self.intervals,
             strategies=self.strategies,
             show_agent_graph=self.show_agent_graph,
+            workflow_metadata=self.ablation.workflow_metadata(),
         )
         
         # Setup progress bar if enabled

@@ -1,9 +1,10 @@
 # Unified benchmark configuration.
 # - "main" controls backtest/trading-engine settings.
-# - "phase1" controls experiment orchestration for benchmark groups.
+# - "phase1" compares full DAG, single-strategy runs, and baselines.
+# - "phase2" runs DAG ablations (multi-interval, LLM portfolio, risk sizing).
 
 main:
-  # Must stay "backtest" for phase1 benchmark.
+  # Must stay "backtest" for phase1/phase2 benchmarks.
   mode: backtest
 
   # Backtest time window (inclusive by project behavior).
@@ -96,5 +97,23 @@ phase1:
   rebalance_every_bars: 24
 
   # Output folder for benchmark artifacts.
+  output_dir: "output"
+
+phase2:
+  # DAG ablation runs: FullDAG plus single-factor removals (see phase2_registry).
+  dag_print_frequency: 1
+  dag_use_progress_bar: false
+
+  # Optional baselines (default off; same as phase1 simulators).
+  run_buy_and_hold: false
+  run_equal_weight_rebalance: false
+  rebalance_every_bars: 24
+
+  # Select subset or [] for all:
+  # FullDAG, Ablate_MultiInterval, Ablate_LLMPortfolio, Ablate_RiskSizing
+  include_ablation_experiments: []
+
+  include_baseline_experiments: []
+  export_individual_results: false
   output_dir: "output"
 

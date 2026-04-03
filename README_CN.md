@@ -237,6 +237,15 @@ python run.py --benchmark-phase1
 uv run python -m trading_dag.cli.benchmark_phase1 --config config/benchmark.yaml
 ```
 
+4. **运行 Phase 2 基准套件**（DAG 消融：每次只关一个子系统，与完整管线对照）：
+```bash
+uv run python run.py --benchmark-phase2
+# 或
+python run.py --benchmark-phase2
+
+uv run python -m trading_dag.cli.benchmark_phase2 --config config/benchmark.yaml
+```
+
 ### Phase 1 Benchmark 说明
 
 - **统一调用入口**：`run_phase1_benchmarks(...)` 作为唯一编排入口。
@@ -250,6 +259,12 @@ uv run python -m trading_dag.cli.benchmark_phase1 --config config/benchmark.yaml
 - **输出文件**：
   - `output/benchmark_phase1_summary_YYYYMMDD_HHMMSS.csv`
   - `output/benchmark_phase1_equity_YYYYMMDD_HHMMSS.csv`
+
+### Phase 2 Benchmark 说明（消融）
+
+- **编排入口**：`run_phase2_benchmarks(...)`；实验列表见 `phase2_registry.py`（`FullDAG`、`Ablate_MultiInterval`、`Ablate_LLMPortfolio`、`Ablate_RiskSizing`）。
+- **配置**：`config/benchmark.yaml` 中的 `phase2` 段（可选基线复用 phase1 的仿真器）。
+- **输出**：`benchmark_phase2_summary_*.csv`、`benchmark_phase2_equity_*.csv`。
 
 ### 输出文件
 
