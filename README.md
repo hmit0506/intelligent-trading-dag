@@ -177,7 +177,7 @@ initial_positions:
 #     ETHUSDT:
 #       long: 2.0
 
-# risk: ...  # optional; see "Risk management" subsection below for defaults and fields
+# risk: ...  # optional — see Risk management
 
 signals:
   intervals: ["1h", "4h"]  # All intervals to analyze. The primary_interval will be automatically included if not listed.
@@ -201,13 +201,11 @@ model:
 
 ### Risk management
 
-This section is the **only** README reference for `RiskManagementNode`: config, outputs, what the portfolio LLM receives, sizing math, and benchmarks. Code: `nodes/risk.py`; schema: `RiskManagementConfig` in `utils/config.py`. The risk node is **deterministic** (pandas / arithmetic only) — **no LLM** inside it.
+**Role.** `RiskManagementNode` in `nodes/risk.py` runs after strategy agents and before the portfolio step. It turns the latest **primary-interval** OHLC and current portfolio state into numeric caps: `suggested_quantity`, `current_price`, `remaining_position_limit`, and a machine-written `reasoning` dict. Implementations use pandas and arithmetic only (**no LLM** in this node). `PortfolioManagementNode` then chooses actions while respecting those numbers (LLM or rule-based path).
 
-#### Configuration
+**Configuration.** Add a top-level `risk` block in `config/config.yaml`. Fields are defined by `RiskManagementConfig` in `utils/config.py`. `risk_config_to_metadata()` copies them into `AgentState` metadata so **backtest, live runs, and DAG benchmarks** share the same `Config.risk`. For benchmark suites, repeat the same block under `main` in `config/benchmark.yaml` if you want **FullDAG** to match a standalone backtest.
 
-Use the top-level `risk` key in `config/config.yaml` (and `config/config.example.yaml`). For benchmarks, duplicate the same block under `main` in `config/benchmark.yaml` so **FullDAG** matches a normal backtest when values are identical.
-
-Example (omit the whole block to use code defaults):
+Omit the entire `risk` block to use library defaults.
 
 ```yaml
 risk:
@@ -215,52 +213,44 @@ risk:
   stop_loss_pct: 0.05
   min_quantity: 0.001
   quantity_decimals: 3
-  stop_distance_mode: entry_or_spot_pct  # or "atr"
+  stop_distance_mode: entry_or_spot_pct   # or: atr
   atr_period: 14
   atr_multiplier: 1.0
   max_notional_fraction_per_ticker: 1.0
 ```
 
-`risk_config_to_metadata()` flattens these into `AgentState` metadata. `Backtester`, `TradingSystemRunner`, and `dag_backtest_runner` all attach the same `Config.risk` so live, backtest, and DAG benchmarks stay aligned.
+| Field | Meaning |
+|-------|---------|
+| `risk_per_trade_pct` | Fraction of **total portfolio value** (cash + marked longs − marked shorts, using closes available to the node) used as the **dollar risk budget** for that sizing pass—not “% of cash” alone. |
+| `stop_loss_pct` | In `entry_or_spot_pct` mode: defines reference stop distance from average cost (when long/short) or from spot (when flat), to obtain dollars at risk per unit. |
+| `stop_distance_mode` | `entry_or_spot_pct`: derive `risk_per_share` from that stop geometry. `atr`: `risk_per_share` = Wilder-style ATR on **primary** OHLC × `atr_multiplier`. |
+| `max_notional_fraction_per_ticker` | `remaining_position_limit = min(cash, fraction × portfolio value)` for that step; at `1.0`, cash is often the binding cap. |
+| `min_quantity`, `quantity_decimals` | Round size to `quantity_decimals`; any positive size below `min_quantity` is raised to `min_quantity`. |
 
-#### What the node produces (per ticker)
+**Outputs** at `data["analyst_signals"]["risk_management_agent"][ticker]`:
 
-Written to `analyst_signals["risk_management_agent"][ticker]`:
+| Field | Content |
+|-------|---------|
+| `suggested_quantity` | Size after budget ÷ `risk_per_share`, notional cap, rounding, and `min_quantity`. |
+| `current_price` | Last primary-interval **close**. |
+| `remaining_position_limit` | `min(cash, max_notional_fraction_per_ticker × portfolio value)`. |
+| `reasoning` | Debug dict: `risk_per_share`, `stop_distance_mode`, leg (`long` / `short` / `flat_spot`), `stop_price`, ATR fields, or `error: missing_ohlc_for_primary_interval` → suggested size **0**. |
 
-| Field | Type | Role |
-|--------|------|------|
-| `suggested_quantity` | float | Suggested size after risk budget, notional cap, rounding, and `min_quantity`. |
-| `current_price` | float | Primary-interval last **close** used for sizing. |
-| `remaining_position_limit` | float | `min(cash, max_notional_fraction_per_ticker × portfolio value)` — nominal cap for that step. |
-| `reasoning` | dict | Structured trace: e.g. `mode`, `stop_distance_mode`, `risk_per_share`, `leg`, `stop_price`, ATR fields, or `error` if OHLC is missing. For humans / logs / debugging; built in code, not by a model. |
+The same structure is also emitted as a LangGraph `HumanMessage` for tracing; that is **not** the same payload as the portfolio LLM’s main structured input.
 
-A `HumanMessage` with the full JSON is also appended for the LangGraph message list; that is separate from the portfolio prompt.
+**Portfolio layer.** `PortfolioManagementNode` supplies `current_prices`, `max_shares` (limit ÷ price, or `0` if invalid), and `suggested_quantities` to the LLM. It does **not** embed the full `reasoning` dict in the prompt. `summarize_risk_reasoning_for_prompt()` in `portfolio.py` builds a short English **`risk_context_summary`** per ticker so the model sees why the cap was computed. Enabling `show_reasoning` only adds console traces. **Rule-based** portfolio (`Ablate_LLMPortfolio`) skips the LLM for final orders but still uses those numeric caps.
 
-#### What the portfolio LLM sees
+**Sizing (full path, default).** `metadata["ablation_full_risk"]` is true.
 
-`PortfolioManagementNode` does **not** paste the full `reasoning` dict into the strategy signal blob. Strategy agents appear under `signals_by_ticker` only. From the risk node it passes these **separate** JSON fields into the portfolio LLM prompt:
+1. Compute portfolio value for the current bar.  
+2. Risk budget (USD) ≈ `risk_per_trade_pct × portfolio value`.  
+3. `risk_per_share` from `entry_or_spot_pct` or `atr`.  
+4. Raw size ≈ `budget ÷ risk_per_share`; use `0` if OHLC is missing or `risk_per_share` is zero.  
+5. Apply notional cap, `quantity_decimals`, and `min_quantity`.
 
-- **`current_prices`** — from `current_price`
-- **`max_shares`** — `remaining_position_limit ÷ price` (or `0` if price invalid)
-- **`suggested_quantities`** — from `suggested_quantity`
-- **`risk_context_summary`** — **per ticker**, one or two short **English** sentences generated in `portfolio.py` (`summarize_risk_reasoning_for_prompt`) from `reasoning`, e.g. `stop_distance_mode`, `risk_per_share`, and reference stop / leg when applicable. This gives the LLM **context for why** the suggested size looks the way it does, without dumping the entire dict.
+**Simplified path.** `Ablate_RiskSizing` sets `ablation_full_risk` false: use `budget ÷ current_price`, then the same cap/rounding. When comparing experiments, state explicitly that stop/ATR scaling was disabled—drawdowns and turnover are not interchangeable with the full path without that caveat.
 
-Turning on **`show_reasoning`** only affects **console** printing (`show_agent_reasoning`); it does not by itself add the full dict to the portfolio LLM.
-
-**Rule-based portfolio** (e.g. `Ablate_LLMPortfolio`) does not call the portfolio LLM; it still uses `suggested_quantities`, `max_shares`, and `current_prices` from the risk node.
-
-#### Sizing logic
-
-**Full path** (default; `metadata["ablation_full_risk"]` true). Target dollars-at-risk per decision ≈ `risk_per_trade_pct × portfolio value`. Per-share risk (`risk_per_share`) depends on `stop_distance_mode`:
-
-- **`entry_or_spot_pct`**: with open long/short, distance uses average cost and `stop_loss_pct`; if **flat**, a spot-based reference (see `nodes/risk.py`).
-- **`atr`**: `risk_per_share = ATR × atr_multiplier` on the **primary** interval OHLC.
-
-Then `suggested_quantity` scales from portfolio risk ÷ `risk_per_share`, with cap versus total portfolio value, decimals, and `min_quantity` as documented above.
-
-**Simplified path** (`metadata["ablation_full_risk"]` false, Phase 2 `Ablate_RiskSizing`): fixed fraction of portfolio ÷ price only — no stop/ATR distance — same caps and rounding fields.
-
-**Phase 2 quick reference.** `FullDAG` uses the full path with **`main.risk`**. `Ablate_RiskSizing` swaps in the simplified path. Flags: `benchmark/ablation.py`, `workflow_metadata` on `Agent`, `Backtester.ablation`.
+**References.** `nodes/risk.py`, `utils/config.py`, `benchmark/ablation.py`, `nodes/portfolio.py`.
 
 ## Usage
 

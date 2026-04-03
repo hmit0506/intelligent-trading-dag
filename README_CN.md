@@ -175,7 +175,7 @@ initial_positions:
 #     ETHUSDT:
 #       long: 2.0
 
-# risk: ...  # 可选；字段与默认值见下方「风险管理」小节
+# risk: ...  # 可选 — 见「风险管理」
 
 signals:
   intervals: ["1h", "4h"]  # 要分析的所有间隔。如果primary_interval未列出，将自动包含。
@@ -199,13 +199,11 @@ model:
 
 ### 风险管理
 
-本小节是 README 里 **唯一** 系统化说明 `RiskManagementNode` 的地方：配置、**每标的输出字段**、**组合 LLM 实际收到什么**、sizing 公式与 Phase 2 对照。实现：`nodes/risk.py`；类型：`utils/config.py` 的 `RiskManagementConfig`。风控节点 **全是确定性计算**，**内部不调 LLM**。
+**职责。** `RiskManagementNode`（`nodes/risk.py`）位于策略节点之后、组合节点之前：根据**主周期** OHLC 与当前持仓/现金，为每个标的计算 `suggested_quantity`、`current_price`、`remaining_position_limit` 及代码填充的 `reasoning`。实现为 pandas 与算术，**节点内不调 LLM**。之后的 `PortfolioManagementNode` 在 LLM 或规则路径下决策时须遵守这些数值。
 
-#### 配置
+**配置。** 在 `config/config.yaml` 根级添加 `risk`，字段见 `utils/config.py` 的 `RiskManagementConfig`。`risk_config_to_metadata()` 写入图 metadata，**回测、仿真实盘与 DAG benchmark** 共用同一 `Config.risk`。若希望基准中 FullDAG 与单机回测一致，在 `config/benchmark.yaml` 的 `main` 下写入相同 `risk` 块。
 
-在 `config/config.yaml`（及 `config.example.yaml`）根级使用 `risk`；基准场景在 `config/benchmark.yaml` 的 **`main.risk`** 写相同块，便于 **FullDAG** 与单机回测对齐。
-
-示例（省略整段则用代码默认值）：
+省略整段 `risk` 则使用库默认。
 
 ```yaml
 risk:
@@ -213,47 +211,38 @@ risk:
   stop_loss_pct: 0.05
   min_quantity: 0.001
   quantity_decimals: 3
-  stop_distance_mode: entry_or_spot_pct  # 或 "atr"
+  stop_distance_mode: entry_or_spot_pct   # 或：atr
   atr_period: 14
   atr_multiplier: 1.0
   max_notional_fraction_per_ticker: 1.0
 ```
 
-`risk_config_to_metadata()` 把上述项写入 `AgentState.metadata`；`Backtester`、`TradingSystemRunner`、`dag_backtest_runner` 共用 **`Config.risk`**，保证回测、实盘与 DAG benchmark 一致。
+| 配置项 | 含义 |
+|--------|------|
+| `risk_per_trade_pct` | 取**组合总市值**（现金 + 多头盯市 − 空头盯市，使用节点已有收盘价）的一比例作为本步**美元风险预算**，不是简单的「占现金百分之几」。 |
+| `stop_loss_pct` | 在 `entry_or_spot_pct` 下：用均本（有仓）或现价（空仓）定义参考止损距离，得到每单位若触损的美元风险。 |
+| `stop_distance_mode` | `entry_or_spot_pct`：由止损几何得到 `risk_per_share`。`atr`：**主周期** OHLC 上 Wilder 风格 ATR × `atr_multiplier` 为 `risk_per_share`。 |
+| `max_notional_fraction_per_ticker` | `remaining_position_limit = min(现金, 系数 × 组合总市值)`；取 `1.0` 时常以现金为紧约束。 |
+| `min_quantity`、`quantity_decimals` | 小数位四舍五入；正数量若小于 `min_quantity` 则抬到 `min_quantity`。 |
 
-#### 节点输出（每个 ticker）
+**输出**（`data["analyst_signals"]["risk_management_agent"][ticker]`）：
 
-写入 `analyst_signals["risk_management_agent"][ticker]`：
+| 字段 | 内容 |
+|------|------|
+| `suggested_quantity` | 预算 ÷ `risk_per_share` 后经名义上限、取整、`min_quantity`。 |
+| `current_price` | 主周期最后一根 **收盘价**。 |
+| `remaining_position_limit` | `min(现金, max_notional_fraction_per_ticker × 组合总市值)`。 |
+| `reasoning` | 调试信息：`risk_per_share`、`stop_distance_mode`、腿别、`stop_price`、ATR 字段等；缺主周期 K 线为 `error: missing_ohlc_for_primary_interval`，建议量 **0**。 |
 
-| 字段 | 类型 | 作用 |
-|------|------|------|
-| `suggested_quantity` | float | 经风险预算、名义上限、小数位与 `min_quantity` 处理后的**建议数量**。 |
-| `current_price` | float | 主周期最新 **收盘价**（用于 sizing）。 |
-| `remaining_position_limit` | float | `min(现金, max_notional_fraction_per_ticker × 组合总市值)`，当步名义上限。 |
-| `reasoning` | dict | 结构化追踪：如 `mode`、`stop_distance_mode`、`risk_per_share`、多空腿 `leg`、参考 `stop_price`、ATR 相关字段，或缺 K 线时的 `error`。**不是**模型生成的 prose，仅供解释与排错。 |
+同一份结构也会作为 LangGraph `HumanMessage` 便于追踪；与组合 LLM 主 prompt 中的结构化输入**不是**同一对象。
 
-图消息里另有一条 `HumanMessage` 承载整份 JSON；与组合层 prompt 是两套用途。
+**组合层。** `PortfolioManagementNode` 向 LLM 提供 `current_prices`、`max_shares`（上限 ÷ 价，无效为 0）、`suggested_quantities`；**不**把完整 `reasoning` dict 嵌入 prompt。`summarize_risk_reasoning_for_prompt()` 生成每标的英文 **`risk_context_summary`**。`show_reasoning` 仅影响控制台。**Ablate_LLMPortfolio** 不调组合 LLM，仍消费上述数值上限。
 
-#### 组合 LLM 实际读到的内容
+**Sizing（完整路径，默认）。** `ablation_full_risk` 为 true：（1）计算当根组合总市值；（2）风险预算 ≈ `risk_per_trade_pct × 总市值`；（3）由 `entry_or_spot_pct` 或 `atr` 得 `risk_per_share`；（4）原始手数 ≈ `预算 ÷ risk_per_share`，缺 K 或 `risk_per_share` 为 0 则为 0；（5）名义封顶、`quantity_decimals`、`min_quantity`。
 
-`PortfolioManagementNode` **不会**把完整 `reasoning` 塞进「策略信号」 JSON：`signals_by_ticker` **只含策略代理**。从风控结果中**单独抽出**并写入 **Portfolio LLM** prompt 的有：
+**简化路径。** `Ablate_RiskSizing` 置 `ablation_full_risk` 为 false：用 `预算 ÷ 现价`，后续封顶与取整相同。对比实验时须**写明**已关闭止损/ATR 尺度，否则不宜与完整路径直接比较回撤、换手。
 
-- **`current_prices`** ← `current_price`
-- **`max_shares`** ← `remaining_position_limit ÷ price`（无效价为 0）
-- **`suggested_quantities`** ← `suggested_quantity`
-- **`risk_context_summary`** ← 每个 ticker **一两句英文**摘要，由 `portfolio.py` 的 `summarize_risk_reasoning_for_prompt` 从 `reasoning` 生成（例如 `stop_distance_mode`、`risk_per_share`、有仓时的参考止损与 `leg`）。作用是让 LLM **理解建议数量的依据**，而不把整坨 dict 贴进上下文。
-
-打开 **`show_reasoning`** 主要影响**终端**打印；**不会**自动把完整 `reasoning` 并入上述 Portfolio LLM 输入。
-
-**规则组合路径**（如 `Ablate_LLMPortfolio`）不调组合 LLM，但仍使用风控给出的 `suggested_quantities`、`max_shares`、`current_prices`。
-
-#### Sizing 公式（完整 / 简化）
-
-**完整分支**（默认，`ablation_full_risk` 为 true）：目标风险资金 ≈ `risk_per_trade_pct × 组合总市值`；`risk_per_share` 由 `stop_distance_mode` 决定（`entry_or_spot_pct` 用成本与 `stop_loss_pct`；空仓时为现价参考距；`atr` 为主周期 ATR×倍数，见 `nodes/risk.py`）。建议量 = 风险预算 / `risk_per_share`，再经名义封顶、取整、`min_quantity`。
-
-**简化分支**（`Ablate_RiskSizing`）：仅「固定比例 × 组合市值 / 现价」，无止损距/ATR，但 cap 与取整规则与完整分支共用同一配置项。
-
-**Phase 2 对照。** `FullDAG` 用完整分支 + **`main.risk`**；`Ablate_RiskSizing` 仅换简化分支。标志位：`benchmark/ablation.py`、`Agent.workflow_metadata`、`Backtester.ablation`。
+**代码入口。** `nodes/risk.py`、`utils/config.py`、`benchmark/ablation.py`、`nodes/portfolio.py`。
 
 ## 使用方法
 

@@ -37,6 +37,12 @@ dependencies = [
     "langchain-ollama>=0.3.3",
 ]
 
+[project.optional-dependencies]
+viz = [
+    "streamlit>=1.39.0",
+    "plotly>=5.22.0",
+]
+
 [project.scripts]
 trading-dag = "trading_dag.cli.main:main"
 trading-dag-backtest = "trading_dag.cli.backtest:main"
