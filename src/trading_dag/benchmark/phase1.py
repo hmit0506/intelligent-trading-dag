@@ -7,21 +7,21 @@ Experiment set:
 - Strong baselines (Buy & Hold / Equal Weight Rebalance)
 """
 from datetime import datetime
-from time import perf_counter
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from trading_dag.benchmark.phase1_baselines import (
-    prepare_primary_klines,
-)
-from trading_dag.benchmark.phase1_dag import run_dag_variant
-from trading_dag.benchmark.phase1_metrics import build_equity_metrics, safe_float
-from trading_dag.benchmark.phase1_models import ExperimentResult
+from trading_dag.benchmark.dag_backtest_runner import run_dag_backtest_experiment
+from trading_dag.benchmark.experiment_types import ExperimentResult
 from trading_dag.benchmark.phase1_registry import (
     get_phase1_baseline_registry,
     get_phase1_dag_registry,
+)
+from trading_dag.benchmark.suite_common import (
+    export_ranked_suite_outputs,
+    run_registered_baselines,
 )
 
 
@@ -35,12 +35,15 @@ def run_phase1_benchmarks(
     dag_use_progress_bar: bool = True,
     include_dag_experiments: Optional[List[str]] = None,
     include_baseline_experiments: Optional[List[str]] = None,
-    export_individual_results: bool = False,
+    export_individual_results: bool = True,
+    export_charts: bool = True,
 ) -> Dict[str, Any]:
     """Run phase 1 benchmark set and export summary tables."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = Path(output_dir)
     out_dir.mkdir(exist_ok=True)
+    file_prefix = "benchmark_phase1"
+    phase_tag = "Phase1"
 
     experiments: List[ExperimentResult] = []
     curves: List[pd.DataFrame] = []
@@ -65,135 +68,53 @@ def run_phase1_benchmarks(
 
     for spec in dag_registry:
         experiment_idx += 1
-        print(f"\n[Phase1][{experiment_idx}/{total_experiments}] DAG experiment: {spec.name} - start")
+        print(f"\n[{phase_tag}][{experiment_idx}/{total_experiments}] DAG experiment: {spec.name} - start")
         start_time = perf_counter()
-        result, curve = run_dag_variant(
+        result, curve = run_dag_backtest_experiment(
             spec.name,
             spec.strategies,
             config,
             print_frequency=dag_print_frequency,
             use_progress_bar=dag_use_progress_bar,
+            ablation=None,
+            category="dag",
         )
         elapsed = perf_counter() - start_time
         print(
-            f"[Phase1][{experiment_idx}/{total_experiments}] DAG experiment: {spec.name} - done "
+            f"[{phase_tag}][{experiment_idx}/{total_experiments}] DAG experiment: {spec.name} - done "
             f"(return={result.total_return_pct:.2f}%, sharpe={result.sharpe_ratio:.2f}, {elapsed:.1f}s)"
         )
         experiments.append(result)
         curves.append(curve.assign(experiment=spec.name))
         if export_individual_results:
-            single_curve_path = out_dir / f"benchmark_phase1_equity_{spec.name}_{timestamp}.csv"
+            single_curve_path = out_dir / f"{file_prefix}_equity_{spec.name}_{timestamp}.csv"
             curve.assign(experiment=spec.name)[["experiment", "date", "portfolio_value"]].to_csv(
                 single_curve_path,
                 index=False,
             )
 
-    # Prepare baseline data only once when baseline experiments exist.
-    if baseline_registry:
-        print("\n[Phase1] Preparing baseline market data once for all baseline experiments...")
-        klines = prepare_primary_klines(
-            tickers=config.signals.tickers,
-            primary_interval=config.primary_interval,
-            start_date=config.start_date,
-            end_date=config.end_date,
-        )
+    run_registered_baselines(
+        config,
+        baseline_registry,
+        phase_tag=phase_tag,
+        baseline_label="Baseline experiment",
+        prep_banner="Preparing baseline market data once for all baseline experiments...",
+        file_prefix=file_prefix,
+        out_dir=out_dir,
+        timestamp=timestamp,
+        export_individual_results=export_individual_results,
+        experiments=experiments,
+        curves=curves,
+        experiment_idx=experiment_idx,
+        total_experiments=total_experiments,
+    )
 
-        for spec in baseline_registry:
-            experiment_idx += 1
-            print(f"\n[Phase1][{experiment_idx}/{total_experiments}] Baseline experiment: {spec.name} - start")
-            start_time = perf_counter()
-            baseline_curve = spec.simulator(
-                tickers=config.signals.tickers,
-                klines=klines,
-                initial_cash=float(config.initial_cash),
-                **spec.kwargs,
-            )
-            baseline_metrics = build_equity_metrics(baseline_curve)
-            experiments.append(
-                ExperimentResult(
-                    name=spec.name,
-                    category="baseline",
-                    total_return_pct=safe_float(baseline_metrics["total_return_pct"]),
-                    sharpe_ratio=safe_float(baseline_metrics["sharpe_ratio"]),
-                    sortino_ratio=safe_float(baseline_metrics["sortino_ratio"]),
-                    max_drawdown_pct=safe_float(baseline_metrics["max_drawdown_pct"]),
-                    win_rate_pct=safe_float(baseline_metrics["win_rate_pct"]),
-                    final_portfolio_value=safe_float(baseline_metrics["final_portfolio_value"]),
-                    initial_portfolio_value=safe_float(baseline_metrics["initial_portfolio_value"]),
-                    num_points=len(baseline_curve),
-                    equity_curve=baseline_curve,
-                )
-            )
-            curves.append(baseline_curve.assign(experiment=spec.name))
-            if export_individual_results:
-                single_curve_path = out_dir / f"benchmark_phase1_equity_{spec.name}_{timestamp}.csv"
-                baseline_curve.assign(experiment=spec.name)[["experiment", "date", "portfolio_value"]].to_csv(
-                    single_curve_path,
-                    index=False,
-                )
-            elapsed = perf_counter() - start_time
-            print(
-                f"[Phase1][{experiment_idx}/{total_experiments}] Baseline experiment: {spec.name} - done "
-                f"(return={safe_float(baseline_metrics['total_return_pct']):.2f}%, "
-                f"sharpe={safe_float(baseline_metrics['sharpe_ratio']):.2f}, {elapsed:.1f}s)"
-            )
-
-    summary_rows = []
-    for exp in experiments:
-        summary_rows.append(
-            {
-                "experiment": exp.name,
-                "category": exp.category,
-                "initial_portfolio_value": exp.initial_portfolio_value,
-                "final_portfolio_value": exp.final_portfolio_value,
-                "total_return_pct": exp.total_return_pct,
-                "sharpe_ratio": exp.sharpe_ratio,
-                "sortino_ratio": exp.sortino_ratio,
-                "max_drawdown_pct": exp.max_drawdown_pct,
-                "win_rate_pct": exp.win_rate_pct,
-                "num_points": exp.num_points,
-            }
-        )
-
-    summary_df = pd.DataFrame(summary_rows).sort_values(
-        by=["total_return_pct", "sharpe_ratio"], ascending=False
-    ).reset_index(drop=True)
-    summary_df.insert(0, "rank_by_return", range(1, len(summary_df) + 1))
-
-    curves_df = pd.concat(curves, ignore_index=True) if curves else pd.DataFrame()
-    if not curves_df.empty:
-        curves_df = curves_df[["experiment", "date", "portfolio_value"]]
-
-    summary_path = out_dir / f"benchmark_phase1_summary_{timestamp}.csv"
-    equity_path = out_dir / f"benchmark_phase1_equity_{timestamp}.csv"
-
-    summary_df.to_csv(summary_path, index=False)
-    if not curves_df.empty:
-        curves_df.to_csv(equity_path, index=False)
-    if export_individual_results:
-        for exp in experiments:
-            single_summary_path = out_dir / f"benchmark_phase1_summary_{exp.name}_{timestamp}.csv"
-            pd.DataFrame(
-                [
-                    {
-                        "experiment": exp.name,
-                        "category": exp.category,
-                        "initial_portfolio_value": exp.initial_portfolio_value,
-                        "final_portfolio_value": exp.final_portfolio_value,
-                        "total_return_pct": exp.total_return_pct,
-                        "sharpe_ratio": exp.sharpe_ratio,
-                        "sortino_ratio": exp.sortino_ratio,
-                        "max_drawdown_pct": exp.max_drawdown_pct,
-                        "win_rate_pct": exp.win_rate_pct,
-                        "num_points": exp.num_points,
-                    }
-                ]
-            ).to_csv(single_summary_path, index=False)
-
-    return {
-        "summary_df": summary_df,
-        "curves_df": curves_df,
-        "summary_path": str(summary_path),
-        "equity_path": str(equity_path) if not curves_df.empty else None,
-    }
-
+    return export_ranked_suite_outputs(
+        experiments,
+        curves,
+        out_dir,
+        file_prefix,
+        timestamp,
+        export_individual_results,
+        export_charts=export_charts,
+    )

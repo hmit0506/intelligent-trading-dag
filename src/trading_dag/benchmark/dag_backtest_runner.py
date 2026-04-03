@@ -1,23 +1,41 @@
 """
-DAG-backed experiment runners for phase 1 benchmark.
+Single-experiment DAG backtest for benchmark suites.
+
+Runs Backtester + Agent with optional ablation settings; shared by phase 1 (full
+pipeline) and phase 2 (controlled subsystem toggles).
 """
-from typing import Any, List, Tuple
+from typing import Any, List, Optional, Tuple
 
 import pandas as pd
 
 from trading_dag.backtest.engine import Backtester
-from trading_dag.benchmark.phase1_metrics import build_equity_metrics, safe_float
-from trading_dag.benchmark.phase1_models import ExperimentResult
+from trading_dag.benchmark.ablation import DAGAblationSettings
+from trading_dag.benchmark.equity_metrics import build_equity_metrics, safe_float
+from trading_dag.benchmark.experiment_types import ExperimentResult
 
 
-def run_dag_variant(
+def run_dag_backtest_experiment(
     variant_name: str,
     strategy_list: List[str],
     config: Any,
     print_frequency: int,
     use_progress_bar: bool,
+    *,
+    ablation: Optional[DAGAblationSettings] = None,
+    category: str = "dag",
 ) -> Tuple[ExperimentResult, pd.DataFrame]:
-    """Run one DAG-based experiment via existing backtester."""
+    """
+    Run one DAG-based benchmark experiment via the production Backtester.
+
+    Args:
+        variant_name: Label for logs and result rows.
+        strategy_list: Strategy class names wired into the workflow.
+        config: Loaded Config (backtest mode).
+        print_frequency: Backtester console table frequency.
+        use_progress_bar: tqdm vs table-style progress.
+        ablation: Optional DAG ablation toggles (phase 2); None = full pipeline (phase 1).
+        category: Result category string (e.g. \"dag\", \"ablation\").
+    """
     backtester = Backtester(
         primary_interval=config.primary_interval,
         intervals=config.signals.intervals,
@@ -36,6 +54,7 @@ def run_dag_variant(
         use_progress_bar=use_progress_bar,
         log_file=None,
         initial_positions=getattr(config, "initial_positions", None),
+        ablation=ablation,
     )
     backtester.run_backtest()
 
@@ -50,7 +69,7 @@ def run_dag_variant(
 
     result = ExperimentResult(
         name=variant_name,
-        category="dag",
+        category=category,
         total_return_pct=safe_float(metrics["total_return_pct"]),
         sharpe_ratio=safe_float(metrics["sharpe_ratio"]),
         sortino_ratio=safe_float(metrics["sortino_ratio"]),
@@ -62,4 +81,3 @@ def run_dag_variant(
         equity_curve=equity_curve,
     )
     return result, equity_curve
-

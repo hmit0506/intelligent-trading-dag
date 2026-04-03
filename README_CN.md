@@ -246,25 +246,61 @@ python run.py --benchmark-phase2
 uv run python -m trading_dag.cli.benchmark_phase2 --config config/benchmark.yaml
 ```
 
-### Phase 1 Benchmark 说明
+### Phase 1 基准：原理与实现要点
 
-- **统一调用入口**：`run_phase1_benchmarks(...)` 作为唯一编排入口。
-- **统一 benchmark 配置**：benchmark 默认使用 `config/benchmark.yaml`，可在同一文件中同时管理主回测参数和 phase1 控制项。
-- **内部模块化拆分**：benchmark 代码按数据模型、指标计算、baseline 仿真、DAG 实验执行拆分在 `src/trading_dag/benchmark/` 下，便于后续维护和扩展。
-- **注册表驱动实验组**：在 `phase1_registry.py` 中增删实验组，无需改 runner 主逻辑。
-- **终端标签更清晰**：每组实验会打印 `[Phase1][i/N] ... start/done`，可以快速识别当前场景。
-- **可控日志噪声**：可在 `config/benchmark.yaml` 的 `phase1` 中设置 `dag_print_frequency` 与 `dag_use_progress_bar`。
-- **支持拆分运行**：可通过 `include_dag_experiments` / `include_baseline_experiments` 只跑指定实验组。
-- **支持单独输出**：设置 `export_individual_results: true` 后，每个场景都会单独导出 CSV。
-- **输出文件**：
-  - `output/benchmark_phase1_summary_YYYYMMDD_HHMMSS.csv`
-  - `output/benchmark_phase1_equity_YYYYMMDD_HHMMSS.csv`
+**研究目的。** Phase 1 回答的是**整体 vs 分解**问题：在相同行情、资金与配置下，**完整多策略 DAG 管线**与「(a) 只启用**单一策略**的同一套回测引擎」以及「(b) **不走 DAG 的简单基线**」相比，行为与指标有何差异？目标不是证明在所有市场都最优，而是展示**集成框架**是否与「单模块抽取」和「朴素对照」有系统性差别，便于写进 FYP 的方法与实验章节。
 
-### Phase 2 Benchmark 说明（消融）
+**控制变量。** 所有 DAG 类实验（`FullDAG`、`SingleMACD`、`SingleRSI`、`SingleBollinger`）共用同一个 `Backtester` / `Agent`：`main` 中的日期、`signals.tickers`、`initial_positions`、保证金与 LLM（`model`）、以及 `signals.intervals` 均一致。`phase1_registry.py` 里每个 `DagExperimentSpec` **只改策略列表**，从而把差异归因到「图里激活了哪些策略节点」，数据加载与组合记账方式保持一致。
 
-- **编排入口**：`run_phase2_benchmarks(...)`；实验列表见 `phase2_registry.py`（`FullDAG`、`Ablate_MultiInterval`、`Ablate_LLMPortfolio`、`Ablate_RiskSizing`）。
-- **配置**：`config/benchmark.yaml` 中的 `phase2` 段（可选基线复用 phase1 的仿真器）。
-- **输出**：`benchmark_phase2_summary_*.csv`、`benchmark_phase2_equity_*.csv`。
+**DAG 实验组含义。**
+
+- **FullDAG** — 使用配置中的完整 `strategies`（如 MACD + RSI + Bollinger）。各策略节点仍汇入既有风控与组合节点，与日常回测拓扑一致。
+- **单策略变体** — 工作流中仍包含风控与组合层，但**仅注册一个**策略类。检验的是：在同一执行与决策外壳下，**单一指标族**相对**多源融合**的表现，而不是把指标拆到完全独立脚本里跑。
+
+**非 DAG 基线。** 实现在 `baseline_simulators.py`，由 `get_phase1_baseline_registry()` 驱动：
+
+- **买入并持有** — 期初一次性配置权重后静态持有，不读策略信号、不调 LLM。
+- **等权定期再平衡** — 按 `rebalance_every_bars`（以 `primary_interval` 的 K 线为单位）调回各标的名义权重近似相等。
+
+二者提供**可解释、易向答辩委员会说明**的对照，而非宣称其为「强模型下界」。
+
+**指标与产物。** 每条权益曲线来自回测器组合价值或基线仿真；`equity_metrics.build_equity_metrics` 计算收益、Sharpe、Sortino、回撤、胜率等。汇总表按收益排序仅为速览；**正式报告**中仍应单独讨论显著性、成本敏感性、多窗口稳健性等（本 README 不替代统计小节）。
+
+**代码结构。** `phase1.py` 负责 Phase 1 编排；共享的基线执行与 CSV 导出在 `suite_common.py`。`phase1_registry.py` 定义实验名与策略列表；单次 DAG 回测通过 `dag_backtest_runner.run_dag_backtest_experiment`（Phase 1 使用默认完整管线）。基线与 K 线准备见 `baseline_simulators.py`。结果类型见 `experiment_types.py`；历史模块名 `phase1_models` / `phase1_metrics` / `phase1_baselines` 仍为兼容重导出。
+
+**使用提示。** 编排入口 `run_phase1_benchmarks(...)`；配置用 `config/benchmark.yaml` 的 `main` + `phase1`（须 `mode: backtest`）；`phase1.dag_print_frequency` / `dag_use_progress_bar` 控制日志；`include_dag_experiments`、`include_baseline_experiments` 可选子集；`export_individual_results` 可逐实验导出。**输出：** `output/benchmark_phase1_summary_*.csv`、`benchmark_phase1_equity_*.csv`。
+
+**写作注意。** LLM 组合层仍受提供商、账户与提示词版本影响（示例中温度常为 0，但仍非数学确定性）。单策略跑法**仍经过相同风控与组合节点**，因此对比的是「策略集合」而非「裸指标脚本」。基线完全不执行 DAG，权益曲线形态与 DAG 实验不可直接等同。
+
+---
+
+### Phase 2 基准：消融原理与实现要点
+
+**研究目的。** Phase 2 回答的是**模块必要性**：在其余设计尽量不变时，**拿掉 DAG 中的一类机制**（多周期、LLM 组合、或结构化风控 sizing）绩效与风险特征如何变化？这是典型的**单因素消融**：注册表里每次默认只关一个维度，并保留 `FullDAG` 作参照；**组合消融**（同时关两项）需自行在 `phase2_registry.py` 增加条目。
+
+**参照组 `FullDAG`。** 与 Phase 1 全策略一致，且 `DAGAblationSettings` 全为默认：多周期数据路径、组合节点走 **LLM**、风控走**完整**分支（含 `risk.py` 中基于止损距离等的头寸逻辑）。
+
+**各消融在实现上的含义（与论文表述对应）。**
+
+| 实验名 | 报告可写的设计理念 | 实现要点 |
+|--------|----------------------|----------|
+| `Ablate_MultiInterval` | 去掉辅助周期，仅保留主周期信息 | `Backtester` 仅向 `Agent` 与预取传入 `primary_interval` 对应的区间，图上只跑单周期分支。 |
+| `Ablate_LLMPortfolio` | 去掉 LLM 在多策略信号上的融合决策 | `PortfolioManagementNode` 走 `generate_rule_based_trading_decision`：按**主周期**聚合各代理信号，确定性映射为买卖开平，规模受风控建议与现金约束。 |
+| `Ablate_RiskSizing` | 弱化结构化风险 sizing | `RiskManagementNode` 在简化分支用**固定账户比例 / 现价**头寸建议，**不再**经过原止损价门槛逻辑；组合与（默认）LLM 仍保留。 |
+
+标志位由 `benchmark/ablation.py` 的 `DAGAblationSettings` 与 `workflow_metadata()` 传到 `Agent` 的 `state["metadata"]`（`use_llm_portfolio`、`ablation_full_risk`），并由 `backtest/engine.py` 的 `Backtester` 控制 `intervals`。详情见 `nodes/portfolio.py`、`nodes/risk.py`。
+
+**Phase 2 中的基线。** 默认关闭（`phase2.run_buy_and_hold`、`run_equal_weight_rebalance`）；打开时复用 Phase 1 的基线仿真，便于同一图中叠加大盘式对照。
+
+**与 LLM 账户的关系。** `FullDAG`、`Ablate_MultiInterval`、`Ablate_RiskSizing` 在组合层仍会调 LLM（除非你再改 registry）；需可用 API 与余额。`Ablate_LLMPortfolio`**不在组合层调 LLM**（策略本身仍为规则/指标），适合无余额时的管线调试，但**不能**代表「完整智能组合」对照。
+
+**代码结构。** `ablation.py`（设置）、`phase2_registry.py`（实验表）、`dag_backtest_runner`（单次回测，传入 `ablation=`）、`phase2.py`（编排）、`cli/benchmark_phase2.py`（命令行）。
+
+**使用提示。** `config/benchmark.yaml` 的 `phase2`；`include_ablation_experiments` 留空则跑注册表全部。**输出：** `benchmark_phase2_summary_*.csv`、`benchmark_phase2_equity_*.csv`。
+
+**写作注意。** 规则组合是为了**可复现、单因素解释**，不是宣称最优非 LLM 策略；简化风控改变的是风险建模假设，须在结果讨论中说明。若面向发表级结论，建议在 README 方法之外增加多样本、多区间或敏感性分析。
+
+---
 
 ### 输出文件
 

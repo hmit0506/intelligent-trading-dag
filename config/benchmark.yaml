@@ -70,9 +70,14 @@ main:
     format: "json"
 
 phase1:
+  # Edit this file before each run (date range under "main", lists below, baselines, etc.).
+
   # Baseline toggles.
   run_buy_and_hold: true
   run_equal_weight_rebalance: true
+
+  # DAG comparison experiments only (reference full DAG is always run first; do not list it here).
+  # Use [] for reference plus all single-strategy variants.
 
   # Benchmark DAG output verbosity:
   # - 1 shows full backtest table output (same style as legacy behavior)
@@ -82,15 +87,17 @@ phase1:
   # Keep false to preserve legacy table-style output without tqdm overlay.
   dag_use_progress_bar: false
 
-  # Optional selective runs. Empty list means "run all available".
-  # Valid DAG names: FullDAG, SingleMACD, SingleRSI, SingleBollinger
-  include_dag_experiments: ["FullDAG", "SingleMACD", "SingleRSI", "SingleBollinger"]
+  # Names: SingleMACD, SingleRSI, SingleBollinger
+  include_dag_experiments: ["SingleMACD", "SingleRSI", "SingleBollinger"]
 
   # Valid baseline names: BuyAndHold, EqualWeightRebalance
   include_baseline_experiments: []
 
-  # If true, export per-experiment summary/equity CSV files in addition to combined outputs.
-  export_individual_results: false
+  # Per-experiment summary/equity CSV (in addition to combined suite files and charts).
+  export_individual_results: true
+
+  # If true, write comparison PNGs (equity overlays + total return bars) next to CSV outputs.
+  export_charts: true
 
   # Rebalance frequency for EqualWeightRebalance baseline (in bars of primary_interval).
   # Example: primary_interval=1h and rebalance_every_bars=24 means rebalance daily.
@@ -100,7 +107,10 @@ phase1:
   output_dir: "output"
 
 phase2:
-  # DAG ablation runs: FullDAG plus single-factor removals (see phase2_registry).
+  # List ablation experiments only; reference full DAG is always run first (do not list FullDAG).
+  # Use [] for reference plus all Ablate_* runs.
+
+  # DAG ablation run controls (see phase2_registry).
   dag_print_frequency: 1
   dag_use_progress_bar: false
 
@@ -109,11 +119,14 @@ phase2:
   run_equal_weight_rebalance: false
   rebalance_every_bars: 24
 
-  # Select subset or [] for all:
-  # FullDAG, Ablate_MultiInterval, Ablate_LLMPortfolio, Ablate_RiskSizing
+  # Example: ["Ablate_MultiInterval"] runs reference DAG + that ablation only.
   include_ablation_experiments: []
 
   include_baseline_experiments: []
-  export_individual_results: false
+  export_individual_results: true
+
+  # Comparison charts (PNG) alongside combined CSVs.
+  export_charts: true
+
   output_dir: "output"
 

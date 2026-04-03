@@ -56,10 +56,14 @@ main:
     format: "json"
 
 phase1:
+  # Edit paths, dates, and experiment lists before running.
+
   # Baseline toggles.
   run_buy_and_hold: true
   run_equal_weight_rebalance: true
 
+  # List comparison DAG runs only (reference full DAG is auto-prepended; do not list FullDAG).
+  # [] = reference plus all single-strategy variants.
   # DAG experiment output controls.
   # Legacy-style verbose output:
   # - print_frequency=1
@@ -71,8 +75,11 @@ phase1:
   include_dag_experiments: []
   include_baseline_experiments: []
 
-  # Export separate CSV per experiment group.
-  export_individual_results: false
+  # Per-experiment CSV files plus combined suite outputs (recommended for experiment workflows).
+  export_individual_results: true
+
+  # Write equity overlay and total-return PNGs next to benchmark CSVs.
+  export_charts: true
 
   # Rebalance cadence for EqualWeightRebalance baseline.
   rebalance_every_bars: 24
@@ -81,15 +88,17 @@ phase1:
   output_dir: "output"
 
 phase2:
+  # [] = reference plus all ablations. Non-empty = only those Ablate_* names (FullDAG auto-prepended).
   # Ablation benchmark (full DAG vs removing one subsystem at a time).
   dag_print_frequency: 1
   dag_use_progress_bar: false
   run_buy_and_hold: false
   run_equal_weight_rebalance: false
   rebalance_every_bars: 24
-  # FullDAG, Ablate_MultiInterval, Ablate_LLMPortfolio, Ablate_RiskSizing
+  # Ablate_MultiInterval, Ablate_LLMPortfolio, Ablate_RiskSizing
   include_ablation_experiments: []
   include_baseline_experiments: []
-  export_individual_results: false
+  export_individual_results: true
+  export_charts: true
   output_dir: "output"
 

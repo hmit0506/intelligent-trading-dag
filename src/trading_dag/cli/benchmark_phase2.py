@@ -92,7 +92,8 @@ def main() -> Dict[str, Any]:
     dag_use_progress_bar = bool(options.get("dag_use_progress_bar", False))
     include_ablation_experiments = _as_string_list(options.get("include_ablation_experiments"))
     include_baseline_experiments = _as_string_list(options.get("include_baseline_experiments"))
-    export_individual_results = bool(options.get("export_individual_results", False))
+    export_individual_results = bool(options.get("export_individual_results", True))
+    export_charts = bool(options.get("export_charts", True))
 
     results = run_phase2_benchmarks(
         config=config,
@@ -105,6 +106,7 @@ def main() -> Dict[str, Any]:
         include_ablation_experiments=include_ablation_experiments or None,
         include_baseline_experiments=include_baseline_experiments or None,
         export_individual_results=export_individual_results,
+        export_charts=export_charts,
     )
 
     summary_df = results["summary_df"]
@@ -113,6 +115,14 @@ def main() -> Dict[str, Any]:
     print(f"\nSummary CSV: {results['summary_path']}")
     if results["equity_path"]:
         print(f"Equity CSV: {results['equity_path']}")
+    figure_labels = {
+        "equity_absolute": "Equity chart (absolute $)",
+        "equity_normalized": "Equity chart (normalized, start=100)",
+        "returns_bar": "Total return bar chart",
+    }
+    for key, path in sorted((results.get("figure_paths") or {}).items()):
+        if path:
+            print(f"{figure_labels.get(key, key)}: {path}")
     return results
 
 
