@@ -18,7 +18,7 @@
 - **初始持仓支持**：回测和实盘模式都支持从现有持仓（多/空）开始，而不仅仅是现金
 - **交易所集成**：实盘模式可以自动从币安交易所账户同步投资组合
 - **统一决策机制**：回测和实盘模式使用相同的决策逻辑，确保结果一致（无未来价格预测）
-- **风险管理**：使用固定分数头寸规模方法的内置头寸规模和风险控制
+- **风险管理**：通过 YAML `risk` 可配置头寸建议（见下方 [风险管理](#风险管理)）
 - **统一运行器**：回测和实盘模式的统一入口，提供一致的接口
 - **进度跟踪**：实时进度条和可配置的输出频率
 - **文件管理**：自动导出结果（CSV/JSON）和内置文件清理工具
@@ -32,7 +32,7 @@
 2. **DataNode**：获取每个指定时间框架的市场数据
 3. **MergeNode**：合并多时间框架数据
 4. **策略节点**（MacdStrategy、RSIStrategy、BollingerStrategy）：应用技术分析
-5. **RiskManagementNode**：计算头寸规模和风险参数
+5. **RiskManagementNode**：按 `risk` 配置计算头寸建议（见 [风险管理](#风险管理)）
 6. **PortfolioManagementNode**：使用LLM推理做出最终交易决策
 
 ## 项目结构
@@ -175,16 +175,7 @@ initial_positions:
 #     ETHUSDT:
 #       long: 2.0
 
-# 风控头寸建议（RiskManagementNode）；省略时与代码默认值一致（见 utils/config.py）
-risk:
-  risk_per_trade_pct: 0.02
-  stop_loss_pct: 0.05
-  min_quantity: 0.001
-  quantity_decimals: 3
-  stop_distance_mode: entry_or_spot_pct
-  atr_period: 14
-  atr_multiplier: 1.0
-  max_notional_fraction_per_ticker: 1.0
+# risk: ...  # 可选；字段与默认值见下方「风险管理」小节
 
 signals:
   intervals: ["1h", "4h"]  # 要分析的所有间隔。如果primary_interval未列出，将自动包含。
@@ -205,6 +196,39 @@ model:
 #   temperature: 0.0
 #   format: "json"
 ```
+
+### 风险管理
+
+本 README 中 **关于 `RiskManagementNode` 的说明集中在此处**：配置项、公式含义、benchmark 对齐与 Phase 2 消融。（实现：`nodes/risk.py`；类型：`utils/config.py` 中 `RiskManagementConfig`。）
+
+**配置位置。** 在 `config/config.yaml`（及 `config.example.yaml`）根级别使用 `risk`。统一基准配置中写在 `config/benchmark.yaml` 的 **`main.risk`**，与单机回测使用相同数值时，**FullDAG 行为一致**。
+
+**`risk` 示例**（整段省略则用代码默认值）：
+
+```yaml
+risk:
+  risk_per_trade_pct: 0.02
+  stop_loss_pct: 0.05
+  min_quantity: 0.001
+  quantity_decimals: 3
+  stop_distance_mode: entry_or_spot_pct  # 或 "atr"
+  atr_period: 14
+  atr_multiplier: 1.0
+  max_notional_fraction_per_ticker: 1.0
+```
+
+**运行时注入。** `risk_config_to_metadata()` 将上述字段写入 `AgentState` 的 `metadata`；`Backtester`、`TradingSystemRunner`、`dag_backtest_runner` 均使用 **`Config.risk`**，保证回测、实盘与 DAG benchmark 一致。
+
+**完整 sizing 分支**（默认，`metadata["ablation_full_risk"]` 为 true）。每笔目标风险资金约为 `risk_per_trade_pct × 组合总市值`；每单位价格波动风险 `risk_per_share` 由 `stop_distance_mode` 决定：
+
+- **`entry_or_spot_pct`**：已有仓时用 `long_cost_basis` / `short_cost_basis` 与 `stop_loss_pct` 定义止损距；**空仓**时退回以现价为参考的百分比距离（与旧版节点结构一致）。
+- **`atr`**：主周期 OHLC 上 `ATR × atr_multiplier`（具体估计见代码）。
+
+建议数量 = 组合风险预算 / `risk_per_share`，再经 `max_notional_fraction_per_ticker` 相对总市值封顶、按 `quantity_decimals` 取整、`min_quantity` 托底。
+
+**简化分支**（`metadata["ablation_full_risk"]` 为 false，即 Phase 2 `Ablate_RiskSizing`）。仅「固定比例 × 组合市值 / 现价」，**不再**用止损距/ATR，但仍沿用同一套 `risk_per_trade_pct`、名义上限与取整规则。
+
+**Phase 2 对照。** `FullDAG` 走完整分支 + **`main.risk`**；`Ablate_RiskSizing` 仅切换为简化分支。标志位：`benchmark/ablation.py`、`Agent.workflow_metadata`、`Backtester.ablation`。
 
 ## 使用方法
 
@@ -281,7 +305,7 @@ uv run python -m trading_dag.cli.benchmark_phase2 --config config/benchmark.yaml
 
 **使用提示。** 编排入口 `run_phase1_benchmarks(...)`；配置用 `config/benchmark.yaml` 的 `main` + `phase1`（须 `mode: backtest`）；`phase1.dag_print_frequency` / `dag_use_progress_bar` 控制日志；`include_dag_experiments`、`include_baseline_experiments` 可选子集；`export_individual_results` 可逐实验导出。**输出：** `output/benchmark_phase1_summary_*.csv`、`benchmark_phase1_equity_*.csv`。
 
-**写作注意。** LLM 组合层仍受提供商、账户与提示词版本影响（示例中温度常为 0，但仍非数学确定性）。单策略跑法**仍经过相同风控与组合节点**，因此对比的是「策略集合」而非「裸指标脚本」。基线完全不执行 DAG，权益曲线形态与 DAG 实验不可直接等同。
+**写作注意。** LLM 组合层仍受提供商、账户与提示词版本影响（示例中温度常为 0，但仍非数学确定性）。单策略跑法仍经过相同的 **RiskManagementNode + 组合层**（见 [风险管理](#风险管理)），对比的是「策略集合」而非「裸指标脚本」。基线完全不执行 DAG，权益曲线形态与 DAG 实验不可直接等同。
 
 ---
 
@@ -289,7 +313,7 @@ uv run python -m trading_dag.cli.benchmark_phase2 --config config/benchmark.yaml
 
 **研究目的。** Phase 2 回答的是**模块必要性**：在其余设计尽量不变时，**拿掉 DAG 中的一类机制**（多周期、LLM 组合、或结构化风控 sizing）绩效与风险特征如何变化？这是典型的**单因素消融**：注册表里每次默认只关一个维度，并保留 `FullDAG` 作参照；**组合消融**（同时关两项）需自行在 `phase2_registry.py` 增加条目。
 
-**参照组 `FullDAG`。** 与 Phase 1 全策略一致，且 `DAGAblationSettings` 全为默认：多周期数据路径、组合节点走 **LLM**、风控走**完整**分支（`risk.py`，参数来自 **`main.risk`**，与普通回测一致）。
+**参照组 `FullDAG`。** 默认 `DAGAblationSettings`：多周期、LLM 组合、**完整**风控 sizing；参数来自 **`main.risk`**，与单机回测一致时请对齐 `benchmark.yaml` 的 `main`（[风险管理](#风险管理)）。
 
 **各消融在实现上的含义（与论文表述对应）。**
 
@@ -297,9 +321,9 @@ uv run python -m trading_dag.cli.benchmark_phase2 --config config/benchmark.yaml
 |--------|----------------------|----------|
 | `Ablate_MultiInterval` | 去掉辅助周期，仅保留主周期信息 | `Backtester` 仅向 `Agent` 与预取传入 `primary_interval` 对应的区间，图上只跑单周期分支。 |
 | `Ablate_LLMPortfolio` | 去掉 LLM 在多策略信号上的融合决策 | `PortfolioManagementNode` 走 `generate_rule_based_trading_decision`：按**主周期**聚合各代理信号，确定性映射为买卖开平，规模受风控建议与现金约束。 |
-| `Ablate_RiskSizing` | 弱化结构化风险 sizing | `RiskManagementNode` 在简化分支用**固定比例**头寸建议（仍使用配置里 **`risk`** 的数量与名义上限等）；组合与（默认）LLM 仍保留。 |
+| `Ablate_RiskSizing` | 弱化结构化风险 sizing | `RiskManagementNode` **简化分支**（[风险管理](#风险管理)）；组合与（默认）LLM 仍保留。 |
 
-标志位由 `benchmark/ablation.py` 的 `DAGAblationSettings` 与 `workflow_metadata()` 传到 `Agent` 的 `state["metadata"]`（`use_llm_portfolio`、`ablation_full_risk`），并由 `backtest/engine.py` 的 `Backtester` 控制 `intervals`。详情见 `nodes/portfolio.py`、`nodes/risk.py`。
+标志位：`DAGAblationSettings` 与 `workflow_metadata()` → `Agent`（`use_llm_portfolio`、`ablation_full_risk`），`Backtester` 控制 `intervals`。代码见 `benchmark/ablation.py`、`nodes/portfolio.py`、`backtest/engine.py`；风控说明见 [风险管理](#风险管理)。
 
 **Phase 2 中的基线。** 默认关闭（`phase2.run_buy_and_hold`、`run_equal_weight_rebalance`）；打开时复用 Phase 1 的基线仿真，便于同一图中叠加大盘式对照。
 
@@ -309,7 +333,7 @@ uv run python -m trading_dag.cli.benchmark_phase2 --config config/benchmark.yaml
 
 **使用提示。** `config/benchmark.yaml` 的 `phase2`；`include_ablation_experiments` 留空则跑注册表全部。**输出：** `benchmark_phase2_summary_*.csv`、`benchmark_phase2_equity_*.csv`。
 
-**写作注意。** 规则组合是为了**可复现、单因素解释**，不是宣称最优非 LLM 策略；简化风控改变的是风险建模假设，须在结果讨论中说明。若面向发表级结论，建议在 README 方法之外增加多样本、多区间或敏感性分析。
+**写作注意。** 规则组合是为了**可复现、单因素解释**，不是宣称最优非 LLM 策略；`Ablate_RiskSizing` 去掉止损/ATR 距离假设，须在讨论中说明（[风险管理](#风险管理)）。若面向发表级结论，建议在 README 方法之外增加多样本、多区间或敏感性分析。
 
 ---
 
@@ -466,7 +490,7 @@ python -m trading_dag.utils.file_manager --help
 详细示例请参阅上方的配置部分。主要选项包括：
 
 - **投资组合初始化**：从交易所同步或手动持仓（成本基础自动设置）
-- **风控（`risk`）**：单笔风险比例、按 `entry_or_spot_pct` 或 `ATR` 的止损距离、数量小数位与单标的敞口上限；经 metadata 注入 Agent，**回测 / 实盘 / benchmark 的 `main.risk`** 一致即可对齐行为（实现见 `nodes/risk.py`）
+- **风控**：集中说明见 [风险管理](#风险管理)（YAML、完整/简化分支、benchmark 对齐）
 - **性能选项**：打印频率、进度条、日志记录
 - **文件管理**：自动清理、保留策略
 

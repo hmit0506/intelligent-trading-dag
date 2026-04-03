@@ -18,7 +18,7 @@ This system employs LangGraph to create a flexible workflow where market data fl
 - **Initial Positions Support**: Both live and backtest modes support starting with existing positions (long/short), not just cash
 - **Exchange Integration**: Live mode can automatically sync portfolio from Binance exchange account
 - **Unified Decision Mechanism**: Live and backtest modes use identical decision-making logic for consistent results (no future price predictions)
-- **Risk Management**: Built-in position sizing and risk controls using Fixed Fractional Position Sizing
+- **Risk Management**: Configurable position sizing via YAML `risk` (documented under [Risk management](#risk-management) in Configuration)
 - **Unified Runner**: Single entry point for both backtest and live modes with consistent interface
 - **Progress Tracking**: Real-time progress bars and configurable output frequency for backtests
 - **File Management**: Automatic export of results (CSV/JSON) and built-in file cleanup utilities
@@ -32,7 +32,7 @@ The system uses a DAG workflow with the following nodes:
 2. **DataNode**: Fetches market data for each specified timeframe
 3. **MergeNode**: Combines multi-timeframe data
 4. **Strategy Nodes** (MacdStrategy, RSIStrategy, BollingerStrategy): Apply technical analysis
-5. **RiskManagementNode**: Calculates position sizing and risk parameters
+5. **RiskManagementNode**: Position sizing from `risk` settings ([details below](#risk-management))
 6. **PortfolioManagementNode**: Makes final trading decisions using LLM reasoning
 
 ## Project Structure
@@ -177,16 +177,7 @@ initial_positions:
 #     ETHUSDT:
 #       long: 2.0
 
-# Risk sizing (RiskManagementNode); omitted keys use defaults (see utils/config.py RiskManagementConfig)
-risk:
-  risk_per_trade_pct: 0.02
-  stop_loss_pct: 0.05
-  min_quantity: 0.001
-  quantity_decimals: 3
-  stop_distance_mode: entry_or_spot_pct  # or "atr" for ATR-based risk-per-unit
-  atr_period: 14
-  atr_multiplier: 1.0
-  max_notional_fraction_per_ticker: 1.0
+# risk: ...  # optional; see "Risk management" subsection below for defaults and fields
 
 signals:
   intervals: ["1h", "4h"]  # All intervals to analyze. The primary_interval will be automatically included if not listed.
@@ -207,6 +198,39 @@ model:
 #   temperature: 0.0
 #   format: "json"
 ```
+
+### Risk management
+
+This is the **single place** README documents `RiskManagementNode` behavior: YAML keys, sizing logic, benchmarks, and ablations. (Implementation: `nodes/risk.py`; schema: `RiskManagementConfig` in `utils/config.py`.)
+
+**Configuration location.** Use the top-level `risk` key in `config/config.yaml` (and `config/config.example.yaml`). For benchmarks, use the same block under `main` in `config/benchmark.yaml` so **FullDAG matches a normal backtest** when values are identical.
+
+**Example `risk` block** (omit it to use code defaults):
+
+```yaml
+risk:
+  risk_per_trade_pct: 0.02
+  stop_loss_pct: 0.05
+  min_quantity: 0.001
+  quantity_decimals: 3
+  stop_distance_mode: entry_or_spot_pct  # or "atr"
+  atr_period: 14
+  atr_multiplier: 1.0
+  max_notional_fraction_per_ticker: 1.0
+```
+
+**Runtime wiring.** `risk_config_to_metadata()` flattens these fields into `AgentState` metadata; `Backtester`, `TradingSystemRunner`, and `dag_backtest_runner` all pass the same `Config.risk` so live, backtest, and DAG benchmarks stay aligned.
+
+**Full sizing path** (default; `metadata["ablation_full_risk"]` true). Target dollars-at-risk per decision ≈ `risk_per_trade_pct × portfolio value`. Per-share risk (`risk_per_share`) depends on `stop_distance_mode`:
+
+- **`entry_or_spot_pct`**: if long/short inventory exists, distance is measured from average cost (`long_cost_basis` / `short_cost_basis`) using `stop_loss_pct`; if **flat**, it falls back to spot-based distance from the current price (same structural idea as the older node).
+- **`atr`**: `risk_per_share = ATR × atr_multiplier` on the **primary** interval OHLC (see code for the exact estimator).
+
+Suggested quantity is then scaled from portfolio risk / `risk_per_share`, capped by `max_notional_fraction_per_ticker` versus total portfolio value, rounded to `quantity_decimals`, and floored at `min_quantity`.
+
+**Simplified path** (`metadata["ablation_full_risk"]` false, i.e. Phase 2 `Ablate_RiskSizing`). Fixed fraction of portfolio ÷ price only—no stop/ATR distance—but **the same** `risk_per_trade_pct`, caps, decimals, and min quantity still apply.
+
+**Phase 2 quick reference.** `FullDAG` uses the full path with **`main.risk`**. `Ablate_RiskSizing` swaps in the simplified path; other ablations leave risk logic unchanged. Flags: `benchmark/ablation.py`, `workflow_metadata` on `Agent`, `Backtester.ablation`.
 
 ## Usage
 
@@ -295,7 +319,7 @@ These provide *interpretable* references (passive and rule-based) rather than co
 - Subsets: `include_dag_experiments`, `include_baseline_experiments`; per-run CSV: `export_individual_results`.
 - **Outputs:** `output/benchmark_phase1_summary_YYYYMMDD_HHMMSS.csv`, `output/benchmark_phase1_equity_YYYYMMDD_HHMMSS.csv`.
 
-**Reporting caveats.** LLM portfolio decisions can vary with provider, temperature (kept at 0 in examples but still subject to API behavior), and prompt drift. Single-strategy runs still use the same **risk and portfolio** layers as FullDAG, so they test “strategy set” rather than “raw indicator in isolation.” Baselines do not consume the DAG at all — differences in level or shape of equity are expected.
+**Reporting caveats.** LLM portfolio decisions can vary with provider, temperature (kept at 0 in examples but still subject to API behavior), and prompt drift. Single-strategy runs still use the same **RiskManagementNode / portfolio** stack as FullDAG ([Risk management](#risk-management)), so they test “strategy set” rather than “raw indicator in isolation.” Baselines do not consume the DAG at all — differences in level or shape of equity are expected.
 
 ---
 
@@ -303,7 +327,7 @@ These provide *interpretable* references (passive and rule-based) rather than co
 
 **Purpose.** Phase 2 answers a *component necessity* question: if we **remove one design choice** from an otherwise identical pipeline, what happens? This is classic **single-factor ablation**: one toggle off per named run (plus `FullDAG` as the reference), so interactions between ablations are **not** explored unless you add combined experiments to `phase2_registry.py`.
 
-**Reference run: `FullDAG`.** Same as Phase 1 full strategy set with **default** `DAGAblationSettings`: multi-interval data path, LLM portfolio node, and full risk sizing (`risk.py`), using the same **`main.risk`** (or defaults) as a normal backtest when you use unified `benchmark.yaml`.
+**Reference run: `FullDAG`.** Default `DAGAblationSettings`: multi-interval path, LLM portfolio, **full** risk sizing. Uses the same **`main.risk`** as a normal backtest when `benchmark.yaml` mirrors your project config ([Risk management](#risk-management)).
 
 **Ablations (what changes under the hood).**
 
@@ -311,9 +335,9 @@ These provide *interpretable* references (passive and rule-based) rather than co
 |------------|-----------|------------------------|
 | `Ablate_MultiInterval` | Remove auxiliary timeframes | `Backtester` passes only `primary_interval` into `Agent` / prefetch so the graph runs a single interval branch; strategies see one horizon instead of `signals.intervals`. |
 | `Ablate_LLMPortfolio` | Remove LLM fusion at the portfolio node | `PortfolioManagementNode` uses `generate_rule_based_trading_decision`: deterministic aggregation of **primary-interval** signals across agents, then fixed mapping to buy/sell/short/hold with sizing caps from risk + cash. |
-| `Ablate_RiskSizing` | Replace structured risk sizing | `RiskManagementNode` uses a **simplified** fixed fraction per ticker (still reads **`risk`** numeric caps from config metadata). Portfolio and LLM paths stay enabled unless separately ablated. |
+| `Ablate_RiskSizing` | Replace structured risk sizing | Simplified `RiskManagementNode` branch ([Risk management](#risk-management)). Portfolio and LLM stay on unless separately ablated. |
 
-Ablation flags are carried as `workflow_metadata` on `Agent` (`use_llm_portfolio`, `ablation_full_risk`) and as `DAGAblationSettings` on `Backtester` (`multi_interval`). See `benchmark/ablation.py`, `nodes/portfolio.py`, `nodes/risk.py`, `backtest/engine.py`.
+Ablation flags: `workflow_metadata` on `Agent` (`use_llm_portfolio`, `ablation_full_risk`) and `DAGAblationSettings` on `Backtester` (`multi_interval`). Code: `benchmark/ablation.py`, `nodes/portfolio.py`, `backtest/engine.py`; risk details: [Risk management](#risk-management).
 
 **Baselines in Phase 2.** Optional and **off by default** (`phase2.run_buy_and_hold`, `run_equal_weight_rebalance`). They reuse Phase 1 baseline simulators when enabled, so you can plot DAG ablations and passive benchmarks on the same figure if desired.
 
@@ -331,7 +355,7 @@ Ablation flags are carried as `workflow_metadata` on `Agent` (`use_llm_portfolio
 - Config: `config/benchmark.yaml` → `phase2` (empty `include_ablation_experiments` runs all registered ablations).
 - **Outputs:** `output/benchmark_phase2_summary_*.csv`, `output/benchmark_phase2_equity_*.csv`.
 
-**Reporting caveats.** Rule-based portfolio ablation is a **deliberately simple** policy for reproducibility, not a claim of best non-LLM execution. Simplified risk removes one structural assumption (stop-loss gating) — describe that clearly when interpreting drawdowns or turnover. For publication-grade claims, add multi-seed or multi-window evaluation outside this README.
+**Reporting caveats.** Rule-based portfolio ablation is a **deliberately simple** policy for reproducibility, not a claim of best non-LLM execution. Simplified risk (`Ablate_RiskSizing`) drops the stop/ATR distance in sizing — say so when discussing drawdowns or turnover ([Risk management](#risk-management)). For publication-grade claims, add multi-seed or multi-window evaluation outside this README.
 
 ---
 
@@ -488,7 +512,7 @@ See [FILE_MANAGEMENT.md](FILE_MANAGEMENT.md) for detailed file management docume
 See the Configuration section above for detailed examples. Key options include:
 
 - **Portfolio Initialization**: Sync from exchange or manual positions (cost basis auto-set)
-- **Risk (`risk`)**: Per-trade fraction, stop/ATR mode, quantity rounding, and per-ticker notional cap; merged into agent metadata so backtest, live, and benchmark `main` share the same knobs (`risk_config_to_metadata` in `utils/config.py`, implementation in `nodes/risk.py`)
+- **Risk**: [Risk management](#risk-management) (single subsection — YAML, sizing modes, benchmarks)
 - **Performance Options**: Print frequency, progress bar, logging
 - **File Management**: Auto-cleanup, retention policies
 
