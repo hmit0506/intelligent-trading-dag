@@ -23,6 +23,7 @@ This system employs LangGraph to create a flexible workflow where market data fl
 - **Progress Tracking**: Real-time progress bars and configurable output frequency for backtests
 - **File Management**: Automatic export of results (CSV/JSON) and built-in file cleanup utilities
 - **Enhanced Output**: Detailed portfolio information, decision history, and performance metrics
+- **Streamlit lab UI**: Browser dashboard under `src/trading_dag/viz/` to browse `output/` benchmark CSVs, Plotly equity curves, and PNG exports (included in default dependencies after `uv sync`)
 
 ## Architecture
 
@@ -49,6 +50,7 @@ The system uses a DAG workflow with the following nodes:
 │   ├── gateway/       # Binance API client
 │   ├── indicators/    # Technical indicators
 │   ├── llm/           # LLM integration
+│   ├── viz/           # Streamlit lab app (benchmark artifacts)
 │   └── utils/         # Configuration and utilities
 ├── config/            # Configuration files
 │   ├── config.yaml    # Main config (copy from config.example.yaml)
@@ -303,6 +305,14 @@ python run.py --benchmark-phase2
 uv run python -m trading_dag.cli.benchmark_phase2 --config config/benchmark.yaml
 ```
 
+5. **Local lab UI (Streamlit)** — browse CSV / PNG / JSON under `output/` (after `uv sync`; no extra install flag):
+
+```bash
+uv run streamlit run src/trading_dag/viz/streamlit_app.py
+```
+
+Point the sidebar **Output directory** at your `output/` folder (or another path with benchmark exports). The app is read-only with respect to trading: it does not run the backtester or submit orders.
+
 ### Phase 1 benchmark — methodology and internals
 
 **Purpose.** Phase 1 answers a *capacity vs. decomposition* question: under identical market data, capital, and configuration, how does the **full multi-strategy DAG pipeline** compare to (a) **running the same engine with only one strategy enabled**, and (b) **simple non-DAG baselines**? The goal is not to prove optimality on every market regime, but to show whether the *integrated framework* behaves differently from isolated components and naive references.
@@ -537,6 +547,7 @@ See the Configuration section above for detailed examples. Key options include:
 - **Risk**: [Risk management](#risk-management) (single subsection — YAML, sizing modes, benchmarks)
 - **Performance Options**: Print frequency, progress bar, logging
 - **File Management**: Auto-cleanup, retention policies
+- **Lab UI**: Streamlit app in `src/trading_dag/viz/streamlit_app.py` (see Quick Start step 5)
 
 ## Technical Details
 

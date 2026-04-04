@@ -23,6 +23,7 @@
 - **进度跟踪**：实时进度条和可配置的输出频率
 - **文件管理**：自动导出结果（CSV/JSON）和内置文件清理工具
 - **增强输出**：详细的投资组合信息、决策历史和性能指标
+- **Streamlit 实验室**：`src/trading_dag/viz/` 下浏览器看板，浏览 `output/` 等目录中的基准 CSV、Plotly 权益曲线与 PNG（`uv sync` 后默认已安装 streamlit/plotly）
 
 ## 架构
 
@@ -49,6 +50,7 @@
 │   ├── gateway/       # 币安API客户端
 │   ├── indicators/    # 技术指标
 │   ├── llm/           # LLM集成
+│   ├── viz/           # Streamlit 实验室（基准产物浏览）
 │   └── utils/         # 配置和工具
 ├── config/            # 配置文件
 │   ├── config.yaml    # 主配置（从 config.example.yaml 复制）
@@ -295,6 +297,14 @@ python run.py --benchmark-phase2
 uv run python -m trading_dag.cli.benchmark_phase2 --config config/benchmark.yaml
 ```
 
+5. **本地实验室（Streamlit）** — 浏览 `output/` 下的 CSV / PNG / JSON（`uv sync` 后无需额外 `--extra`）：
+
+```bash
+uv run streamlit run src/trading_dag/viz/streamlit_app.py
+```
+
+在侧栏 **Output directory** 指向你的 `output/`（或任意含基准导出文件的目录）。该应用对交易为只读：不执行回测、不报单。
+
 ### Phase 1 基准：原理与实现要点
 
 **研究目的。** Phase 1 回答的是**整体 vs 分解**问题：在相同行情、资金与配置下，**完整多策略 DAG 管线**与「(a) 只启用**单一策略**的同一套回测引擎」以及「(b) **不走 DAG 的简单基线**」相比，行为与指标有何差异？目标不是证明在所有市场都最优，而是展示**集成框架**是否与「单模块抽取」和「朴素对照」有系统性差别，便于写进 FYP 的方法与实验章节。
@@ -507,6 +517,7 @@ python -m trading_dag.utils.file_manager --help
 - **风控**：集中说明见 [风险管理](#风险管理)（YAML、完整/简化分支、benchmark 对齐）
 - **性能选项**：打印频率、进度条、日志记录
 - **文件管理**：自动清理、保留策略
+- **实验室 UI**：`src/trading_dag/viz/streamlit_app.py`（见「快速开始」第 5 步）
 
 ## 技术细节
 
