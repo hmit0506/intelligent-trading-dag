@@ -15,6 +15,7 @@ from trading_dag.utils.helpers import format_live_results
 from trading_dag.utils.file_manager import OutputFileManager
 from trading_dag.utils.constants import Interval
 from trading_dag.utils.config import risk_config_to_metadata
+from trading_dag.utils.backtest_export import export_backtest_trades_and_performance
 from trading_dag.utils.output_layout import resolve_output_dirs
 from trading_dag.data.provider import BinanceDataProvider
 from datetime import timedelta
@@ -511,21 +512,14 @@ class TradingSystemRunner:
         format_live_results(decisions, analyst_signals)
     
     def _export_backtest_results(self, backtester: Backtester) -> None:
-        """Export backtest results to CSV and JSON formats."""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        # Export trade log to JSON
-        json_path = self.backtest_output_dir / f"backtest_trades_{timestamp}.json"
-        with open(json_path, 'w') as f:
-            json.dump(backtester.trade_log, f, indent=2, default=str)
+        """Export backtest results to CSV and JSON formats (same as benchmark DAG exports)."""
+        json_path, csv_path = export_backtest_trades_and_performance(
+            backtester,
+            self.backtest_output_dir,
+            experiment_label="",
+        )
         print(f"\n{Fore.GREEN}Trade log exported to: {json_path}{Style.RESET_ALL}")
-        
-        # Export performance data to CSV
-        if hasattr(backtester, 'portfolio_values') and backtester.portfolio_values:
-            import pandas as pd
-            df = pd.DataFrame(backtester.portfolio_values)
-            csv_path = self.backtest_output_dir / f"backtest_performance_{timestamp}.csv"
-            df.to_csv(csv_path, index=False)
+        if csv_path is not None:
             print(f"{Fore.GREEN}Performance data exported to: {csv_path}{Style.RESET_ALL}")
     
     def _save_decision_history(self) -> None:

@@ -10,6 +10,7 @@ from typing import Any, List, Optional, Tuple
 import pandas as pd
 
 from trading_dag.backtest.engine import Backtester
+from trading_dag.utils.backtest_export import export_backtest_trades_and_performance
 from trading_dag.utils.output_layout import resolve_output_dirs
 from trading_dag.benchmark.ablation import DAGAblationSettings
 from trading_dag.benchmark.equity_metrics import build_equity_metrics, safe_float
@@ -63,6 +64,12 @@ def run_dag_backtest_experiment(
         export_output_dir=bench_dir,
     )
     backtester.run_backtest()
+
+    export_backtest_trades_and_performance(
+        backtester,
+        bench_dir,
+        experiment_label=variant_name,
+    )
 
     portfolio_values = pd.DataFrame(backtester.portfolio_values)
     if portfolio_values.empty:
