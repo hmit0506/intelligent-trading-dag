@@ -1,7 +1,7 @@
 # Unified benchmark configuration example.
 # Copy this file to benchmark.yaml and customize values.
-# Tip: copy "main" from config/config.yaml (or config.example.yaml) so FullDAG matches your
-# usual backtest; keep mode: backtest here (phase CLIs reject live).
+# Copy "main" from config/config.yaml (or config.example.yaml) for engine parity; keep mode: backtest.
+# Under main.output_layout set only benchmark_subdir (root/backtest/live come from config.yaml).
 
 main:
   mode: backtest
@@ -31,6 +31,9 @@ main:
   use_progress_bar: true
   enable_logging: true
   save_decision_history: true
+
+  output_layout:
+    benchmark_subdir: benchmark
 
   auto_cleanup_files: false
   file_retention_days: 30
@@ -89,8 +92,7 @@ phase1:
   # Rebalance cadence for EqualWeightRebalance baseline.
   rebalance_every_bars: 24
 
-  # Output directory for benchmark csv files.
-  output_dir: "output"
+  # Optional: set output_dir to override the default (config.yaml root + benchmark_subdir).
 
 phase2:
   # [] = reference plus all ablations. Non-empty = only those Ablate_* names (FullDAG auto-prepended).
@@ -105,5 +107,4 @@ phase2:
   include_baseline_experiments: []
   export_individual_results: true
   export_charts: true
-  output_dir: "output"
 

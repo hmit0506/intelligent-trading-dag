@@ -23,6 +23,7 @@ from trading_dag.benchmark.suite_common import (
     export_ranked_suite_outputs,
     run_registered_baselines,
 )
+from trading_dag.utils.output_layout import resolve_benchmark_output_path
 
 
 def run_phase1_benchmarks(
@@ -30,7 +31,7 @@ def run_phase1_benchmarks(
     run_buy_and_hold: bool = True,
     run_equal_weight_rebalance: bool = True,
     rebalance_every_bars: int = 24,
-    output_dir: str = "output",
+    output_dir: Optional[str] = None,
     dag_print_frequency: int = 1000,
     dag_use_progress_bar: bool = True,
     include_dag_experiments: Optional[List[str]] = None,
@@ -40,8 +41,8 @@ def run_phase1_benchmarks(
 ) -> Dict[str, Any]:
     """Run phase 1 benchmark set and export summary tables."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = Path(output_dir)
-    out_dir.mkdir(exist_ok=True)
+    out_dir = resolve_benchmark_output_path(config, output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
     file_prefix = "benchmark_phase1"
     phase_tag = "Phase1"
 

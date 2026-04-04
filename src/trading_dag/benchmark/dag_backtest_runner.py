@@ -4,11 +4,13 @@ Single-experiment DAG backtest for benchmark suites.
 Runs Backtester + Agent with optional ablation settings; shared by phase 1 (full
 pipeline) and phase 2 (controlled subsystem toggles).
 """
+from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
 import pandas as pd
 
 from trading_dag.backtest.engine import Backtester
+from trading_dag.utils.output_layout import resolve_output_dirs
 from trading_dag.benchmark.ablation import DAGAblationSettings
 from trading_dag.benchmark.equity_metrics import build_equity_metrics, safe_float
 from trading_dag.benchmark.experiment_types import ExperimentResult
@@ -36,6 +38,8 @@ def run_dag_backtest_experiment(
         ablation: Optional DAG ablation toggles (phase 2); None = full pipeline (phase 1).
         category: Result category string (e.g. \"dag\", \"ablation\").
     """
+    bench_dir = resolve_output_dirs(Path.cwd(), config.output_layout).benchmark
+
     backtester = Backtester(
         primary_interval=config.primary_interval,
         intervals=config.signals.intervals,
@@ -56,6 +60,7 @@ def run_dag_backtest_experiment(
         initial_positions=getattr(config, "initial_positions", None),
         ablation=ablation,
         risk_management=config.risk,
+        export_output_dir=bench_dir,
     )
     backtester.run_backtest()
 

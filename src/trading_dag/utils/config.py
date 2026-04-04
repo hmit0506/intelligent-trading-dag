@@ -10,6 +10,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from trading_dag.utils.constants import Interval, QUANTITY_DECIMALS
+from trading_dag.utils.output_layout import OutputLayoutConfig
 
 load_dotenv()
 
@@ -103,6 +104,11 @@ class Config(BaseSettings):
     file_keep_latest: int = 10
 
     risk: RiskManagementConfig = Field(default_factory=RiskManagementConfig)
+
+    output_layout: OutputLayoutConfig = Field(
+        default_factory=OutputLayoutConfig,
+        description="Where backtest/benchmark/live artifacts are stored under the process cwd.",
+    )
 
     @model_validator(mode="before")
     @classmethod

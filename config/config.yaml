@@ -38,8 +38,15 @@ show_agent_graph: true  # Generate and save workflow graph
 # Performance and output options
 print_frequency: 1  # Print results every N iterations
 use_progress_bar: true  # Show progress bar during backtest
-enable_logging: true  # Generate log files in output/ directory
-save_decision_history: true  # Save decision history to JSON file
+enable_logging: true  # Generate log files under output_layout → backtest_subdir
+save_decision_history: true  # Save decision history to JSON under output_layout → live_subdir
+
+# Artifact layout: root + backtest/live subdirs only (single place). Benchmark suite subfolder:
+# config/benchmark.yaml → main.output_layout → benchmark_subdir.
+output_layout:
+  root: output
+  backtest_subdir: backtest
+  live_subdir: live
 
 # File management options
 auto_cleanup_files: false  # Automatically clean up old files

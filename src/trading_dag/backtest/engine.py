@@ -14,6 +14,7 @@ from trading_dag.agent import Agent
 from trading_dag.benchmark.ablation import DAGAblationSettings
 from trading_dag.data.provider import BinanceDataProvider
 from trading_dag.utils.config import RiskManagementConfig, risk_config_to_metadata
+from trading_dag.utils.output_layout import OutputLayoutConfig, resolve_output_dirs
 
 
 class Backtester:
@@ -38,6 +39,7 @@ class Backtester:
             initial_positions: Optional[Dict[str, Any]] = None,
             ablation: Optional[DAGAblationSettings] = None,
             risk_management: Optional[RiskManagementConfig] = None,
+            export_output_dir: Optional[Path] = None,
     ):
         """
         Backtester
@@ -77,8 +79,11 @@ class Backtester:
         self.log_file = log_file
         self.initial_positions = initial_positions  # Store for later application
         self.initial_portfolio_value = None  # Will be calculated after initial positions are applied
-        self.output_dir = Path("output")
-        self.output_dir.mkdir(exist_ok=True)
+        if export_output_dir is not None:
+            self.output_dir = Path(export_output_dir)
+        else:
+            self.output_dir = resolve_output_dirs(Path.cwd(), OutputLayoutConfig()).backtest
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         self.binance_data_provider = BinanceDataProvider()
         self.klines: Dict[str, pd.DataFrame] = {}
         self.trade_log: List[Dict[str, Any]] = []  # To store detailed trade and portfolio information

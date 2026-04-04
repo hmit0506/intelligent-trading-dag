@@ -1,0 +1,15 @@
+"""Streamlit navigation labels."""
+
+SCREEN_BACKTEST_OUTPUT = "Backtest output"
+SCREEN_BENCHMARK_SUITE = "Benchmark suite"
+SCREEN_LIVE_OUTPUT = "Live output"
+SCREEN_SETUP = "Setup & API"
+SCREEN_BUILDER = "Fusion Builder"
+
+SCREENS = [
+    SCREEN_BACKTEST_OUTPUT,
+    SCREEN_BENCHMARK_SUITE,
+    SCREEN_LIVE_OUTPUT,
+    SCREEN_SETUP,
+    SCREEN_BUILDER,
+]

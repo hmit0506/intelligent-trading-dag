@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Tuple
 import yaml
 
 from trading_dag.utils.config import Config, load_config
+from trading_dag.utils.output_layout import resolve_output_layout_for_benchmark
 
 FIGURE_PATH_LABELS = {
     "equity_absolute": "Equity chart (absolute $)",
@@ -76,7 +77,16 @@ def load_unified_benchmark(
     else:
         raise ValueError(f"benchmark.yaml field '{phase_section}' must be a mapping")
 
-    return Config(**main_cfg), options
+    main_dict = dict(main_cfg)
+    config_yaml = Path(config_path).resolve().parent / "config.yaml"
+    bench_ol = main_dict.get("output_layout")
+    merged_layout = resolve_output_layout_for_benchmark(
+        config_yaml,
+        bench_ol if isinstance(bench_ol, dict) else None,
+    )
+    main_dict["output_layout"] = merged_layout.model_dump()
+
+    return Config(**main_dict), options
 
 
 def print_suite_outputs(results: Dict[str, Any], phase_label: str) -> None:

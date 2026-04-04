@@ -15,6 +15,7 @@ from trading_dag.utils.helpers import format_live_results
 from trading_dag.utils.file_manager import OutputFileManager
 from trading_dag.utils.constants import Interval
 from trading_dag.utils.config import risk_config_to_metadata
+from trading_dag.utils.output_layout import resolve_output_dirs
 from trading_dag.data.provider import BinanceDataProvider
 from datetime import timedelta
 import pandas as pd
@@ -40,9 +41,14 @@ class TradingSystemRunner:
         self.portfolio = self._init_portfolio()
         self.initial_portfolio_value = None  # Will be calculated after portfolio initialization
         self.decision_history: List[Dict[str, Any]] = []
-        self.output_dir = Path("output")
-        self.output_dir.mkdir(exist_ok=True)
-        self.file_manager = OutputFileManager(str(self.output_dir))
+        out = resolve_output_dirs(Path.cwd(), self.config.output_layout)
+        self.output_root = out.root
+        self.backtest_output_dir = out.backtest
+        self.live_output_dir = out.live
+        self.output_root.mkdir(parents=True, exist_ok=True)
+        self.backtest_output_dir.mkdir(parents=True, exist_ok=True)
+        self.live_output_dir.mkdir(parents=True, exist_ok=True)
+        self.file_manager = OutputFileManager(str(self.backtest_output_dir))
         
         # Calculate initial portfolio value (for return calculation)
         self._calculate_initial_portfolio_value()
@@ -317,8 +323,8 @@ class TradingSystemRunner:
         """Run backtest mode with enhanced features."""
         # Generate log file path
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = str(self.output_dir / f"backtest_{timestamp}.log")
-        
+        log_file = str(self.backtest_output_dir / f"backtest_{timestamp}.log")
+
         backtester = Backtester(
             primary_interval=self.config.primary_interval,
             intervals=self.config.signals.intervals,
@@ -338,6 +344,7 @@ class TradingSystemRunner:
             log_file=log_file if getattr(self.config, 'enable_logging', True) else None,
             initial_positions=getattr(self.config, 'initial_positions', None),  # Support initial positions in backtest
             risk_management=self.config.risk,
+            export_output_dir=self.backtest_output_dir,
         )
         
         print("Starting backtest...")
@@ -508,7 +515,7 @@ class TradingSystemRunner:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         # Export trade log to JSON
-        json_path = self.output_dir / f"backtest_trades_{timestamp}.json"
+        json_path = self.backtest_output_dir / f"backtest_trades_{timestamp}.json"
         with open(json_path, 'w') as f:
             json.dump(backtester.trade_log, f, indent=2, default=str)
         print(f"\n{Fore.GREEN}Trade log exported to: {json_path}{Style.RESET_ALL}")
@@ -517,7 +524,7 @@ class TradingSystemRunner:
         if hasattr(backtester, 'portfolio_values') and backtester.portfolio_values:
             import pandas as pd
             df = pd.DataFrame(backtester.portfolio_values)
-            csv_path = self.output_dir / f"backtest_performance_{timestamp}.csv"
+            csv_path = self.backtest_output_dir / f"backtest_performance_{timestamp}.csv"
             df.to_csv(csv_path, index=False)
             print(f"{Fore.GREEN}Performance data exported to: {csv_path}{Style.RESET_ALL}")
     
@@ -525,9 +532,11 @@ class TradingSystemRunner:
         """Save decision history to file."""
         if not self.decision_history:
             return
-        
+        if not getattr(self.config, "save_decision_history", True):
+            return
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        json_path = self.output_dir / f"live_decisions_{timestamp}.json"
+        json_path = self.live_output_dir / f"live_decisions_{timestamp}.json"
         
         with open(json_path, 'w') as f:
             json.dump(self.decision_history, f, indent=2, default=str)

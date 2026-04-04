@@ -51,7 +51,7 @@ def main() -> Dict[str, Any]:
     run_buy_and_hold = bool(options.get("run_buy_and_hold", False))
     run_equal_weight_rebalance = bool(options.get("run_equal_weight_rebalance", False))
     rebalance_every_bars = int(options.get("rebalance_every_bars", 24))
-    output_dir = str(options.get("output_dir", "output"))
+    output_dir = options.get("output_dir")
     dag_print_frequency = int(options.get("dag_print_frequency", getattr(config, "print_frequency", 1)))
     dag_use_progress_bar = bool(options.get("dag_use_progress_bar", False))
     include_ablation_experiments = as_string_list(options.get("include_ablation_experiments"))
