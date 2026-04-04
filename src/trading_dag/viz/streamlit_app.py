@@ -2,7 +2,7 @@
 Streamlit UI aligned with the exported FYP prototype (light dashboard, blue accents).
 
 Run from repo root:
-    uv sync --extra viz
+    uv sync
     uv run streamlit run src/trading_dag/viz/streamlit_app.py
 
 Palette is sampled from ``FYP Prototype.pdf`` (light panels ~#c0d8f0, primary blue ~#0048f0).

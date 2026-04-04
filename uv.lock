@@ -751,22 +751,18 @@ dependencies = [
     { name = "numpy" },
     { name = "orjson" },
     { name = "pandas" },
+    { name = "plotly" },
     { name = "pycryptodome" },
     { name = "pydantic-settings" },
     { name = "pytz" },
     { name = "pyyaml" },
     { name = "pyyml" },
     { name = "requests" },
+    { name = "streamlit" },
     { name = "tabulate" },
     { name = "websockets" },
     { name = "websockets-proxy" },
     { name = "yarl" },
-]
-
-[package.optional-dependencies]
-viz = [
-    { name = "plotly" },
-    { name = "streamlit" },
 ]
 
 [package.metadata]
@@ -787,20 +783,19 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "orjson", specifier = ">=3.9.0" },
     { name = "pandas", specifier = ">=2.2.3" },
-    { name = "plotly", marker = "extra == 'viz'", specifier = ">=5.22.0" },
+    { name = "plotly", specifier = ">=5.22.0" },
     { name = "pycryptodome", specifier = ">=3.22.0" },
     { name = "pydantic-settings", specifier = ">=2.9.1" },
     { name = "pytz", specifier = ">=2023.3" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "pyyml", specifier = ">=0.0.2" },
     { name = "requests", specifier = ">=2.32.3" },
-    { name = "streamlit", marker = "extra == 'viz'", specifier = ">=1.39.0" },
+    { name = "streamlit", specifier = ">=1.39.0" },
     { name = "tabulate", specifier = ">=0.9.0" },
     { name = "websockets", specifier = ">=15.0.1" },
     { name = "websockets-proxy", marker = "python_full_version >= '3.8'", specifier = ">=0.1.3" },
     { name = "yarl", specifier = ">=1.20.0" },
 ]
-provides-extras = ["viz"]
 
 [[package]]
 name = "jinja2"
