@@ -21,7 +21,7 @@
 - **风险管理**：通过 YAML `risk` 可配置头寸建议（见下方 [风险管理](#风险管理)）
 - **统一运行器**：回测和实盘模式的统一入口，提供一致的接口
 - **进度跟踪**：实时进度条和可配置的输出频率
-- **文件管理**：自动导出结果（CSV/JSON）和内置文件清理工具
+- **文件管理**：在可配置的 `output_layout` 下对 **回测 / benchmark / 实盘** 子目录导出（CSV/JSON）并支持统一清理（见 [输出目录与文件](#输出目录与文件)）
 - **增强输出**：详细的投资组合信息、决策历史和性能指标
 - **Streamlit 实验室**：`src/trading_dag/viz/` 下浏览器看板，浏览 `output/` 等目录中的基准 CSV、Plotly 权益曲线与 PNG（`uv sync` 后默认已安装 streamlit/plotly）
 
@@ -54,9 +54,11 @@
 │   └── utils/         # 配置和工具
 ├── config/            # 配置文件
 │   ├── config.yaml    # 主配置（从 config.example.yaml 复制）
-│   └── config.example.yaml
+│   ├── config.example.yaml
+│   ├── benchmark.yaml # 基准套件（从 benchmark.example.yaml 复制）
+│   └── benchmark.example.yaml
 ├── tests/             # 单元和集成测试
-├── output/            # 生成的文件（日志、JSON、CSV）
+├── output/            # 默认产物根目录；见 output_layout（backtest/ benchmark/ live/）
 ├── run.py             # 便捷启动脚本
 └── pyproject.toml     # 包配置和依赖
 ```
@@ -361,26 +363,42 @@ uv run streamlit run src/trading_dag/viz/streamlit_app.py
 
 ---
 
-### 输出文件
+### 输出目录与文件
 
-所有输出文件保存在 `output/` 目录：
-- **日志文件** (`.log`)：回测执行日志
-- **JSON文件** (`.json`)：交易日志和决策历史
-- **CSV文件** (`.csv`)：性能数据
+产物路径相对于**运行命令时的当前工作目录**，由 **`config/config.yaml`** 中的 **`output_layout`** 决定：
 
-管理输出文件：
-```bash
-# 列出所有输出文件
-python -m trading_dag.cli.manage_output list
+| 字段 | 作用 |
+|------|------|
+| `root` | 产物根目录名或路径（默认：`output`） |
+| `backtest_subdir` | 回测日志、`backtest_trades_*.json`、`backtest_performance_*.csv`、组合净值 PNG 等 |
+| `live_subdir` | 实盘 `live_decisions_*.json` |
 
-# 显示摘要
-python -m trading_dag.cli.manage_output summary
+**Benchmark 套件子目录名**只在 **`config/benchmark.yaml`** → **`main.output_layout`** → **`benchmark_subdir`** 中配置；加载时会与 `config.yaml` 合并，根目录与回测/实盘子目录名仍以 **`config.yaml`** 为准。Phase 1/2 的汇总 CSV、对比图，以及 DAG 实验导出的 `backtest_trades_*` JSON 等，落在 **`{root}/{benchmark_subdir}/`**。
 
-# 清理旧文件
-python -m trading_dag.cli.manage_output cleanup
+典型目录结构：
 
-# 详细用法请参阅 [FILE_MANAGEMENT_CN.md](FILE_MANAGEMENT_CN.md)
 ```
+output/
+├── backtest/    # 单机回测与引擎导出
+├── benchmark/   # 基准套件汇总、图表、各实验 DAG 导出
+└── live/        # 实盘决策 JSON
+```
+
+**管理产物文件**（默认从 `config/config.yaml` 读取 `output_layout`，可扫描三个子目录，或用 `--subdir` 只扫一个）：
+
+```bash
+uv run trading-dag-manage-output summary
+uv run trading-dag-manage-output list --subdir benchmark
+uv run trading-dag-manage-output cleanup
+uv run trading-dag-manage-output delete-json --subdir backtest
+
+# 只扫描任意单个目录（旧版扁平目录用法）
+uv run trading-dag-manage-output list --output-dir path/to/folder
+```
+
+`cleanup` 在未使用 `--output-dir` 时，会采用 **`config.yaml`** 中的 **`file_retention_days`** 与 **`file_keep_latest`**。若开启 **`auto_cleanup_files: true`**，运行器会在 **回测、benchmark、live** 三个子目录上应用同一策略。
+
+更多说明见 [FILE_MANAGEMENT_CN.md](FILE_MANAGEMENT_CN.md)。
 
 ### 回测模式
 
@@ -482,7 +500,7 @@ class MyStrategy(BaseNode):
 
 ### 投资组合价值图表
 - **生成时机**：回测完成后自动生成
-- **保存位置**：`output/backtest_portfolio_value_YYYYMMDD_HHMMSS.png`
+- **保存位置**：配置的回测子目录下（默认 `output/backtest/`），文件名为 `backtest_portfolio_value_YYYYMMDD_HHMMSS.png`
 - **格式**：高分辨率 PNG（300 DPI）
 - **内容**：投资组合价值随时间变化，包含网格和标签
 
@@ -495,19 +513,16 @@ class MyStrategy(BaseNode):
 
 ## 文件管理
 
-系统会在 `output/` 目录自动生成输出文件。使用文件管理工具进行清理：
+命令 **`trading-dag-manage-output`** 在 **`output_layout`** 约定的目录下操作（默认：`output/backtest`、`output/benchmark`、`output/live`）。默认读取 `config/config.yaml`；若传入 **`--output-dir`**，则只扫描该单目录（兼容旧布局）。
 
 ```bash
-# 快速命令
-python -m trading_dag.cli.manage_output list      # 列出所有文件
-python -m trading_dag.cli.manage_output summary  # 显示统计信息
-python -m trading_dag.cli.manage_output cleanup  # 清理旧文件
-
-# 高级用法
+uv run trading-dag-manage-output summary
+uv run trading-dag-manage-output list --subdir all
+uv run trading-dag-manage-output cleanup --config config/config.yaml
 python -m trading_dag.utils.file_manager --help
 ```
 
-详细文档请参阅 [FILE_MANAGEMENT_CN.md](FILE_MANAGEMENT_CN.md)。
+详见 [输出目录与文件](#输出目录与文件) 与 [FILE_MANAGEMENT_CN.md](FILE_MANAGEMENT_CN.md)。
 
 ## 配置选项
 
@@ -516,7 +531,7 @@ python -m trading_dag.utils.file_manager --help
 - **投资组合初始化**：从交易所同步或手动持仓（成本基础自动设置）
 - **风控**：集中说明见 [风险管理](#风险管理)（YAML、完整/简化分支、benchmark 对齐）
 - **性能选项**：打印频率、进度条、日志记录
-- **文件管理**：自动清理、保留策略
+- **文件管理**：`trading-dag-manage-output`、自动清理与保留策略（见上文）
 - **实验室 UI**：`src/trading_dag/viz/streamlit_app.py`（见「快速开始」第 5 步）
 
 ## 技术细节

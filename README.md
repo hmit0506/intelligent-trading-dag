@@ -21,7 +21,7 @@ This system employs LangGraph to create a flexible workflow where market data fl
 - **Risk Management**: Configurable position sizing via YAML `risk` (documented under [Risk management](#risk-management) in Configuration)
 - **Unified Runner**: Single entry point for both backtest and live modes with consistent interface
 - **Progress Tracking**: Real-time progress bars and configurable output frequency for backtests
-- **File Management**: Automatic export of results (CSV/JSON) and built-in file cleanup utilities
+- **File Management**: Exports (CSV/JSON) and cleanup across **backtest / benchmark / live** subfolders under configurable `output_layout` (see [Output layout](#output-layout-and-files))
 - **Enhanced Output**: Detailed portfolio information, decision history, and performance metrics
 - **Streamlit lab UI**: Browser dashboard under `src/trading_dag/viz/` to browse `output/` benchmark CSVs, Plotly equity curves, and PNG exports (included in default dependencies after `uv sync`)
 
@@ -54,9 +54,11 @@ The system uses a DAG workflow with the following nodes:
 │   └── utils/         # Configuration and utilities
 ├── config/            # Configuration files
 │   ├── config.yaml    # Main config (copy from config.example.yaml)
-│   └── config.example.yaml
+│   ├── config.example.yaml
+│   ├── benchmark.yaml # Benchmark suite (copy from benchmark.example.yaml)
+│   └── benchmark.example.yaml
 ├── tests/             # Unit and integration tests
-├── output/            # Generated files (logs, JSON, CSV)
+├── output/            # Default artifact root; see output_layout (backtest/ benchmark/ live/)
 ├── run.py             # Convenience launcher
 └── pyproject.toml     # Package config and dependencies
 ```
@@ -391,26 +393,42 @@ Ablation flags: `workflow_metadata` on `Agent` (`use_llm_portfolio`, `ablation_f
 
 ---
 
-### Output Files
+### Output layout and files
 
-All output files are saved in the `output/` directory:
-- **Log files** (`.log`): Backtest execution logs
-- **JSON files** (`.json`): Trade logs and decision history
-- **CSV files** (`.csv`): Performance data
+Artifacts are stored under the process **current working directory** using `output_layout` in **`config/config.yaml`**:
 
-Manage output files:
-```bash
-# List all output files
-python -m trading_dag.cli.manage_output list
+| Setting | Purpose |
+|--------|---------|
+| `root` | Workspace root directory name or path (default: `output`) |
+| `backtest_subdir` | Backtest logs, `backtest_trades_*.json`, `backtest_performance_*.csv`, portfolio PNGs |
+| `live_subdir` | `live_decisions_*.json` (live mode) |
 
-# Show summary
-python -m trading_dag.cli.manage_output summary
+The **benchmark suite subfolder name** is configured only in **`config/benchmark.yaml`** → `main.output_layout` → `benchmark_subdir`. At load time it is merged with `config.yaml` so the tree root and backtest/live names stay in one place. Phase 1/2 CSV/PNG exports and DAG benchmark runs (including `backtest_trades_*` JSON for DAG experiments) go under **`{root}/{benchmark_subdir}/`**.
 
-# Clean up old files
-python -m trading_dag.cli.manage_output cleanup
+Typical layout:
 
-# See FILE_MANAGEMENT.md for detailed usage
 ```
+output/
+├── backtest/    # standalone backtest + engine exports
+├── benchmark/   # suite summaries, charts, per-experiment DAG exports
+└── live/        # live decision JSON
+```
+
+**Manage output files** (reads `output_layout` from `config/config.yaml` by default; scans all three subfolders, or one with `--subdir`):
+
+```bash
+uv run trading-dag-manage-output summary
+uv run trading-dag-manage-output list --subdir benchmark
+uv run trading-dag-manage-output cleanup
+uv run trading-dag-manage-output delete-json --subdir backtest
+
+# Single-directory override (legacy flat folder)
+uv run trading-dag-manage-output list --output-dir path/to/folder
+```
+
+`cleanup` uses `file_retention_days` and `file_keep_latest` from `config.yaml` when not using `--output-dir`. With `auto_cleanup_files: true`, the runner applies the same policy across **backtest, benchmark, and live** subfolders.
+
+See [FILE_MANAGEMENT.md](FILE_MANAGEMENT.md) for more detail.
 
 ### Backtest Mode
 
@@ -512,7 +530,7 @@ The backtester provides:
 
 ### Portfolio Value Chart
 - **When**: Generated automatically after backtest completion
-- **Location**: Saved to `output/backtest_portfolio_value_YYYYMMDD_HHMMSS.png`
+- **Location**: Saved under the configured backtest folder (default `output/backtest/`) as `backtest_portfolio_value_YYYYMMDD_HHMMSS.png`
 - **Format**: High-resolution PNG (300 DPI)
 - **Content**: Portfolio value over time with grid and labels
 
@@ -525,19 +543,16 @@ The backtester provides:
 
 ## File Management
 
-The system automatically generates output files in the `output/` directory. Use the file management utilities to clean up:
+The CLI **`trading-dag-manage-output`** lists and deletes files under **`output_layout`** (default: `output/backtest`, `output/benchmark`, `output/live`). It respects `config/config.yaml` unless you pass `--output-dir` for a single folder.
 
 ```bash
-# Quick commands
-python -m trading_dag.cli.manage_output list      # List all files
-python -m trading_dag.cli.manage_output summary  # Show statistics
-python -m trading_dag.cli.manage_output cleanup  # Clean old files
-
-# Advanced usage
-python -m trading_dag.utils.file_manager --help
+uv run trading-dag-manage-output summary
+uv run trading-dag-manage-output list --subdir all
+uv run trading-dag-manage-output cleanup --config config/config.yaml
+python -m trading_dag.utils.file_manager --help   # lower-level argparse API
 ```
 
-See [FILE_MANAGEMENT.md](FILE_MANAGEMENT.md) for detailed file management documentation.
+See [Output layout](#output-layout-and-files) and [FILE_MANAGEMENT.md](FILE_MANAGEMENT.md).
 
 ## Configuration Options
 

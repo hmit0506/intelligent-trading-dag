@@ -12,7 +12,7 @@ from colorama import Fore, Style, init
 from trading_dag.agent import Agent
 from trading_dag.backtest.engine import Backtester
 from trading_dag.utils.helpers import format_live_results
-from trading_dag.utils.file_manager import OutputFileManager
+from trading_dag.utils.file_manager import output_file_manager_for_layout
 from trading_dag.utils.constants import Interval
 from trading_dag.utils.config import risk_config_to_metadata
 from trading_dag.utils.backtest_export import export_backtest_trades_and_performance
@@ -48,8 +48,9 @@ class TradingSystemRunner:
         self.live_output_dir = out.live
         self.output_root.mkdir(parents=True, exist_ok=True)
         self.backtest_output_dir.mkdir(parents=True, exist_ok=True)
+        out.benchmark.mkdir(parents=True, exist_ok=True)
         self.live_output_dir.mkdir(parents=True, exist_ok=True)
-        self.file_manager = OutputFileManager(str(self.backtest_output_dir))
+        self.file_manager = output_file_manager_for_layout(out)
         
         # Calculate initial portfolio value (for return calculation)
         self._calculate_initial_portfolio_value()
