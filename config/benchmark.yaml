@@ -2,11 +2,10 @@
 # - "main" mirrors config/config.yaml for engine settings (Phase 1/2 FullDAG vs standalone backtest).
 #   Only "mode" must stay "backtest". Do not duplicate output_layout root/backtest/live here—those
 #   come from config.yaml; under main.output_layout set only benchmark_subdir for the suite folder.
-# - "phase1" compares full DAG, single-strategy runs, and baselines.
+# - "phase1" compares full DAG vs single-strategy runs.
 # - "phase2" runs DAG ablations (multi-interval, LLM portfolio, risk sizing).
 #
-# Report-oriented preset (FYP): ~14 calendar days, BTC-only, 1h+4h, two single-strategy controls,
-# both simple baselines, charts on. Tweak dates/tickers if you need a shorter run or more realism.
+# Report-oriented preset (FYP): ~14 calendar days, BTC+ETH, 1h+4h, single-strategy controls, charts on.
 
 main:
   # Phase runners require backtest even if config/config.yaml uses mode: live for day-to-day.
@@ -73,11 +72,7 @@ main:
     format: "json"
 
 phase1:
-  # FullDAG (auto) vs two single-strategy DAGs (omit SingleBollinger to save runtime vs three singles).
-  # Baselines: simple buy-and-hold and periodic equal-weight (same universe as tickers).
-
-  run_buy_and_hold: true
-  run_equal_weight_rebalance: true
+  # FullDAG (auto) vs listed single-strategy DAGs.
 
   # Large value = less console spam (does not reduce LLM calls).
   dag_print_frequency: 999
@@ -87,17 +82,11 @@ phase1:
   # Names: SingleMACD, SingleRSI, SingleBollinger
   include_dag_experiments: ["SingleMACD", "SingleBollinger", "SingleRSI"]
 
-  include_baseline_experiments: []
-
   # Per-experiment summary/equity CSV (in addition to combined suite files and charts).
   export_individual_results: true
 
   # If true, write comparison PNGs (equity overlays + total return bars) next to CSV outputs.
   export_charts: true
-
-  # Rebalance frequency for EqualWeightRebalance baseline (in bars of primary_interval).
-  # Example: primary_interval=1h and rebalance_every_bars=24 means rebalance daily.
-  rebalance_every_bars: 24
 
 phase2:
   # FullDAG (auto) vs all registered ablations (empty list = Ablate_MultiInterval, LLMPortfolio, RiskSizing).
@@ -106,13 +95,8 @@ phase2:
   dag_print_frequency: 999
   dag_use_progress_bar: true
 
-  run_buy_and_hold: false
-  run_equal_weight_rebalance: false
-  rebalance_every_bars: 24
-
   include_ablation_experiments: []
 
-  include_baseline_experiments: []
   export_individual_results: true
 
   # Comparison charts (PNG) alongside combined CSVs.

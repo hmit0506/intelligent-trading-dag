@@ -286,7 +286,7 @@ uv run python run.py  # （在config.yaml中设置 mode: live）
 python run.py
 ```
 
-3. **运行 Phase 1 基准对照套件**（Full DAG + 单策略组 + 强基线组）：
+3. **运行 Phase 1 基准对照套件**（Full DAG + 单策略变体）：
 ```bash
 # 可选：先创建统一 benchmark 配置
 cp config/benchmark.example.yaml config/benchmark.yaml
@@ -319,7 +319,7 @@ uv run streamlit run src/trading_dag/viz/streamlit_app.py
 
 ### Phase 1 基准：原理与实现要点
 
-**研究目的。** Phase 1 回答的是**整体 vs 分解**问题：在相同行情、资金与配置下，**完整多策略 DAG 管线**与「(a) 只启用**单一策略**的同一套回测引擎」以及「(b) **不走 DAG 的简单基线**」相比，行为与指标有何差异？目标不是证明在所有市场都最优，而是展示**集成框架**是否与「单模块抽取」和「朴素对照」有系统性差别，便于写进 FYP 的方法与实验章节。
+**研究目的。** Phase 1 回答的是**整体 vs 分解**问题：在相同行情、资金与配置下，**完整多策略 DAG 管线**与「只启用**单一策略**的同一套回测引擎」相比，行为与指标有何差异？目标不是证明在所有市场都最优，而是展示**集成框架**是否与「单模块抽取」有系统性差别，便于写进 FYP 的方法与实验章节。
 
 **控制变量。** 所有 DAG 类实验（`FullDAG`、`SingleMACD`、`SingleRSI`、`SingleBollinger`）共用同一个 `Backtester` / `Agent`：`main` 中的日期、`timezone`、`signals.tickers`、`initial_positions`、保证金与 LLM（`model`）、以及 `signals.intervals` 均一致。`phase1_registry.py` 里每个 `DagExperimentSpec` **只改策略列表**，从而把差异归因到「图里激活了哪些策略节点」，数据加载与组合记账方式保持一致。
 
@@ -328,24 +328,13 @@ uv run streamlit run src/trading_dag/viz/streamlit_app.py
 - **FullDAG** — 使用配置中的完整 `strategies`（如 MACD + RSI + Bollinger）。各策略节点仍汇入既有风控与组合节点，与日常回测拓扑一致。
 - **单策略变体** — 工作流中仍包含风控与组合层，但**仅注册一个**策略类。检验的是：在同一执行与决策外壳下，**单一指标族**相对**多源融合**的表现，而不是把指标拆到完全独立脚本里跑。
 
-**非 DAG 基线。** 实现在 `baseline_simulators.py`，由 `get_phase1_baseline_registry()` 驱动：
+**指标与产物。** 每条权益曲线来自回测器组合价值序列；`equity_metrics.build_equity_metrics` 计算收益、Sharpe、Sortino、回撤、胜率等。汇总表按收益排序仅为速览；**正式报告**中仍应单独讨论显著性、成本敏感性、多窗口稳健性等（本 README 不替代统计小节）。
 
-- **买入并持有** — 以与 DAG 一致的**期初总净值**一次性按权重买入后静态持有，不读策略信号、不调 LLM。
-- **等权定期再平衡** — 按 `rebalance_every_bars`（以 `primary_interval` 的 K 线为单位）调回各标的名义权重近似相等。
+**代码结构。** `phase1.py` 负责 Phase 1 编排；共享的 CSV 导出与图表在 `suite_common.py`。`phase1_registry.py` 定义实验名与策略列表；单次 DAG 回测通过 `dag_backtest_runner.run_dag_backtest_experiment`（Phase 1 使用默认完整管线）。结果类型见 `experiment_types.py`；历史模块名 `phase1_models` / `phase1_metrics` / `phase1_baselines` 仍为兼容重导出（`phase1_baselines` 现为无符号占位）。
 
-**起始净值与 DAG 对齐。** 若配置了 `initial_positions` 多头，被动基线使用 **`现金 + 各多头 × 第一根主周期 K 收盘价`**（`benchmark/initial_nav.py`）作为仿真起点，权益图与 FullDAG 从**同一总净值**出发；旧版仅用 `initial_cash` 会导致曲线整体偏低、不宜直接叠图比较。
+**使用提示。** 编排入口 `run_phase1_benchmarks(...)`；配置用 `config/benchmark.yaml` 的 `main` + `phase1`（须 `mode: backtest`）；可选用 `--benchmark-config` 覆盖合并到 `phase1`（旧习惯）。`phase1.dag_print_frequency` / `dag_use_progress_bar` 控制日志。**列表**：`include_dag_experiments` 只写**对照**实验名；**`FullDAG` 始终自动先跑**，不必写进 YAML（写了也会被忽略）。留空则跑 FullDAG + 全部单策略变体。`export_individual_results` 导出逐实验 CSV；`export_charts` 导出对比 PNG（绝对权益、归一化权益、总收益柱）。路径打印逻辑在 `cli/benchmark_cli_common.py`。运行结束时会打印各 CSV/PNG 路径；图表类型与 `figures.export_benchmark_figures` 一致。**最小产物：** `benchmark_phase1_summary_*.csv`、`benchmark_phase1_equity_*.csv`。
 
-**何时买入持有与等权再平衡完全重合。** **单标的**时两条基线永远同路径。**多标的**时，在**第一次再平衡发生之前**两条线也相同；若回测窗口里 **主周期 K 线根数少于** `rebalance_every_bars`，整段都不会触发再平衡，两条线会一直叠在一起。短窗口可把 `rebalance_every_bars` 调小（如 `1` 或 `6`）才能看出差别。对比图会把数值完全相同的曲线**合并为一条**，图例写成 `BuyAndHold / EqualWeightRebalance`。
-
-二者提供**可解释、易向答辩委员会说明**的对照，而非宣称其为「强模型下界」。
-
-**指标与产物。** 每条权益曲线来自回测器组合价值或基线仿真；`equity_metrics.build_equity_metrics` 计算收益、Sharpe、Sortino、回撤、胜率等。汇总表按收益排序仅为速览；**正式报告**中仍应单独讨论显著性、成本敏感性、多窗口稳健性等（本 README 不替代统计小节）。
-
-**代码结构。** `phase1.py` 负责 Phase 1 编排；共享的基线执行与 CSV 导出在 `suite_common.py`。`phase1_registry.py` 定义实验名与策略列表；单次 DAG 回测通过 `dag_backtest_runner.run_dag_backtest_experiment`（Phase 1 使用默认完整管线）。基线与 K 线准备见 `baseline_simulators.py`。结果类型见 `experiment_types.py`；历史模块名 `phase1_models` / `phase1_metrics` / `phase1_baselines` 仍为兼容重导出。
-
-**使用提示。** 编排入口 `run_phase1_benchmarks(...)`；配置用 `config/benchmark.yaml` 的 `main` + `phase1`（须 `mode: backtest`）；可选用 `--benchmark-config` 覆盖合并到 `phase1`（旧习惯）。`phase1.dag_print_frequency` / `dag_use_progress_bar` 控制日志。**列表**：`include_*` 只写**对照**实验名；**`FullDAG` 始终自动先跑**，不必写进 YAML（写了也会被忽略）。`include_dag_experiments` 留空则跑 FullDAG + 全部单策略变体。`export_individual_results` 导出逐实验 CSV；`export_charts` 导出对比 PNG（绝对权益、归一化权益、总收益柱）。路径打印逻辑在 `cli/benchmark_cli_common.py`。运行结束时会打印各 CSV/PNG 路径；图表类型与 `figures.export_benchmark_figures` 一致。**最小产物：** `benchmark_phase1_summary_*.csv`、`benchmark_phase1_equity_*.csv`。
-
-**写作注意。** LLM 组合层仍受提供商、账户与提示词版本影响（示例中温度常为 0，但仍非数学确定性）。单策略跑法仍经过相同的 **RiskManagementNode + 组合层**（见 [风险管理](#风险管理)），对比的是「策略集合」而非「裸指标脚本」。基线完全不执行 DAG，权益曲线形态与 DAG 实验不可直接等同。
+**写作注意。** LLM 组合层仍受提供商、账户与提示词版本影响（示例中温度常为 0，但仍非数学确定性）。单策略跑法仍经过相同的 **RiskManagementNode + 组合层**（见 [风险管理](#风险管理)），对比的是「策略集合」而非「裸指标脚本」。
 
 ---
 
@@ -364,8 +353,6 @@ uv run streamlit run src/trading_dag/viz/streamlit_app.py
 | `Ablate_RiskSizing` | 弱化结构化风险 sizing | `RiskManagementNode` **简化分支**（[风险管理](#风险管理)）；组合与（默认）LLM 仍保留。 |
 
 标志位：`DAGAblationSettings` 与 `workflow_metadata()` → `Agent`（`use_llm_portfolio`、`ablation_full_risk`），`Backtester` 控制 `intervals`。代码见 `benchmark/ablation.py`、`nodes/portfolio.py`、`backtest/engine.py`；风控说明见 [风险管理](#风险管理)。
-
-**Phase 2 中的基线。** 默认关闭（`phase2.run_buy_and_hold`、`run_equal_weight_rebalance`）；打开时复用 Phase 1 的基线仿真，便于同一图中叠加大盘式对照。
 
 **与 LLM 账户的关系。** `FullDAG`、`Ablate_MultiInterval`、`Ablate_RiskSizing` 在组合层仍会调 LLM（除非你再改 registry）；需可用 API 与余额。`Ablate_LLMPortfolio`**不在组合层调 LLM**（策略本身仍为规则/指标），适合无余额时的管线调试，但**不能**代表「完整智能组合」对照。
 
@@ -410,8 +397,6 @@ output/
   同一次运行里时间戳可能相差约 1 秒；**按 `{实验名}` 段** 配对即可。
 
 - **单机回测**（`trading-dag-backtest`）：在 **`backtest_subdir`** 下为**不带**实验名的传统命名：`backtest_portfolio_value_{时间戳}.png`、`backtest_trades_{时间戳}.json` 等。
-
-- **简单基线**（买入持有、等权再平衡）：权益进入**套件** CSV/图；**不**产生与 DAG 相同格式的 `backtest_trades_*.json`。
 
 **管理产物文件**（默认从 `config/config.yaml` 读取 `output_layout`，可扫描三个子目录，或用 `--subdir` 只扫一个）：
 

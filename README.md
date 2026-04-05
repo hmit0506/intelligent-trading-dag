@@ -296,7 +296,7 @@ uv run python run.py  # (set mode: live in config.yaml)
 python run.py
 ```
 
-3. **Run Phase 1 benchmark suite** (Full DAG + single-strategy variants + strong baselines):
+3. **Run Phase 1 benchmark suite** (Full DAG + single-strategy variants):
 ```bash
 # Optional: create unified benchmark config first
 cp config/benchmark.example.yaml config/benchmark.yaml
@@ -329,7 +329,7 @@ Point the sidebar **Output directory** at your `output/` folder (or another path
 
 ### Phase 1 benchmark — methodology and internals
 
-**Purpose.** Phase 1 answers a *capacity vs. decomposition* question: under identical market data, capital, and configuration, how does the **full multi-strategy DAG pipeline** compare to (a) **running the same engine with only one strategy enabled**, and (b) **simple non-DAG baselines**? The goal is not to prove optimality on every market regime, but to show whether the *integrated framework* behaves differently from isolated components and naive references.
+**Purpose.** Phase 1 answers a *capacity vs. decomposition* question: under identical market data, capital, and configuration, how does the **full multi-strategy DAG pipeline** compare to **running the same engine with only one strategy enabled**? The goal is not to prove optimality on every market regime, but to show whether the *integrated framework* behaves differently from isolated components inside the same execution shell.
 
 **What is held constant.** All DAG-based runs (`FullDAG`, `SingleMACD`, `SingleRSI`, `SingleBollinger`) share the same `Backtester` and `Agent`: same `main.start_date` / `end_date`, `timezone`, `signals.tickers`, `initial_positions`, margin settings, LLM (`model`), and `signals.intervals`. Only the **strategy list** changes per `DagExperimentSpec` in `phase1_registry.py`. That isolates “which strategies are active in the graph” while keeping data and portfolio mechanics aligned.
 
@@ -338,25 +338,13 @@ Point the sidebar **Output directory** at your `output/` folder (or another path
 - **FullDAG** — Uses the full `strategies` list from config (e.g. MACD + RSI + Bollinger). All strategy nodes feed the risk and portfolio nodes as in normal backtest.
 - **Single-strategy variants** — The workflow graph still contains risk and portfolio; only **one** strategy class is registered. This tests whether a *single indicator family* inside the same execution and decision shell matches the full fusion.
 
-**Baselines (non-DAG).** Implemented in `baseline_simulators.py` and driven by `get_phase1_baseline_registry()`:
-
-- **Buy and hold** — Starting portfolio value allocated once to a static mix; no strategy signals or LLM.
-- **Equal-weight rebalance** — Periodically reweights to equal nominal exposure across tickers (`rebalance_every_bars` in primary-interval bars).
-
-**Starting value vs. DAG.** Passive baselines use **`cash + long position value at the first primary bar’s close`** when `initial_positions` includes longs (`benchmark/initial_nav.py`), so equity charts start at the **same total NAV** as DAG runs. Previously only `initial_cash` was used, which misaligned charts when positions were configured.
-
-**When buy-and-hold equals equal-weight rebalance.** With **one ticker**, both baselines are always the same path. With **multiple tickers**, they match until the **first** rebalance: if the backtest has **fewer primary bars than** `rebalance_every_bars`, no rebalance runs and the two curves stay **identical**. Lower `rebalance_every_bars` (e.g. `1` or `6`) on short windows to see separation. Comparison charts merge numerically identical series into one legend entry (e.g. `BuyAndHold / EqualWeightRebalance`).
-
-These provide *interpretable* references (passive and rule-based) rather than competing “oracle” models.
-
-**Metrics.** Per experiment, equity is the backtester’s portfolio value time series (or baseline simulation). `equity_metrics.build_equity_metrics` derives returns, Sharpe, Sortino, drawdown, win rate, etc. Summary rows are ranked for quick comparison; for a formal report you should treat statistical significance, transaction costs, and robustness across windows separately.
+**Metrics.** Per experiment, equity is the backtester’s portfolio value time series. `equity_metrics.build_equity_metrics` derives returns, Sharpe, Sortino, drawdown, win rate, etc. Summary rows are ranked for quick comparison; for a formal report you should treat statistical significance, transaction costs, and robustness across windows separately.
 
 **Code layout.**
 
-- `run_phase1_benchmarks` — Phase-specific orchestration (`phase1.py`); shared CSV/baseline logic lives in `suite_common.py`. Phase CLIs share `cli/benchmark_cli_common.py`.
+- `run_phase1_benchmarks` — Phase-specific orchestration (`phase1.py`); shared CSV export and figures live in `suite_common.py`. Phase CLIs share `cli/benchmark_cli_common.py`.
 - `phase1_registry.py` — Named experiments → strategy lists.
 - `dag_backtest_runner.run_dag_backtest_experiment` — Invokes `Backtester` (phase 1 passes default ablation = full pipeline).
-- `baseline_simulators.py` / `prepare_primary_klines` — Passive baseline paths and data prep.
 - `experiment_types.py` — `ExperimentResult` dataclass (all phases). Legacy imports `phase1_models` / `phase1_metrics` / `phase1_baselines` remain as thin re-exports.
 
 **Operational notes.**
@@ -364,11 +352,11 @@ These provide *interpretable* references (passive and rule-based) rather than co
 - Single orchestration entry: `run_phase1_benchmarks(...)`.
 - Config: `config/benchmark.yaml` → `main` + `phase1` (mode must be `backtest`). Optional `--benchmark-config` YAML merges into `phase1` (legacy).
 - Noise control: `phase1.dag_print_frequency`, `dag_use_progress_bar`.
-- **Experiment lists:** `include_dag_experiments` / `include_baseline_experiments` — list **comparison** names only; **`FullDAG` is always run first** and need not appear in YAML (an explicit `FullDAG` entry is ignored). Empty `include_dag_experiments` runs FullDAG plus **all** single-strategy variants.
+- **Experiment list:** `include_dag_experiments` — list **comparison** names only; **`FullDAG` is always run first** and need not appear in YAML (an explicit `FullDAG` entry is ignored). Empty `include_dag_experiments` runs FullDAG plus **all** single-strategy variants.
 - Exports: `export_individual_results` (per-experiment CSVs); `export_charts` (comparison PNGs: absolute equity overlay, normalized equity, total-return bars). CLI printing of paths is shared via `cli/benchmark_cli_common.py`.
 - **Outputs (minimum):** `output/benchmark_phase1_summary_*.csv`, `benchmark_phase1_equity_*.csv`. Prefixes and chart types are printed at the end of a run and match `benchmark/phase1.py` / `figures.export_benchmark_figures`.
 
-**Reporting caveats.** LLM portfolio decisions can vary with provider, temperature (kept at 0 in examples but still subject to API behavior), and prompt drift. Single-strategy runs still use the same **RiskManagementNode / portfolio** stack as FullDAG ([Risk management](#risk-management)), so they test “strategy set” rather than “raw indicator in isolation.” Baselines do not consume the DAG at all — differences in level or shape of equity are expected.
+**Reporting caveats.** LLM portfolio decisions can vary with provider, temperature (kept at 0 in examples but still subject to API behavior), and prompt drift. Single-strategy runs still use the same **RiskManagementNode / portfolio** stack as FullDAG ([Risk management](#risk-management)), so they test “strategy set” rather than “raw indicator in isolation.”
 
 ---
 
@@ -387,8 +375,6 @@ These provide *interpretable* references (passive and rule-based) rather than co
 | `Ablate_RiskSizing` | Replace structured risk sizing | Simplified `RiskManagementNode` branch ([Risk management](#risk-management)). Portfolio and LLM stay on unless separately ablated. |
 
 Ablation flags: `workflow_metadata` on `Agent` (`use_llm_portfolio`, `ablation_full_risk`) and `DAGAblationSettings` on `Backtester` (`multi_interval`). Code: `benchmark/ablation.py`, `nodes/portfolio.py`, `backtest/engine.py`; risk details: [Risk management](#risk-management).
-
-**Baselines in Phase 2.** Optional and **off by default** (`phase2.run_buy_and_hold`, `run_equal_weight_rebalance`). They reuse Phase 1 baseline simulators when enabled, so you can plot DAG ablations and passive benchmarks on the same figure if desired.
 
 **LLM dependency.** Any run with **LLM portfolio enabled** (`FullDAG`, `Ablate_MultiInterval`, `Ablate_RiskSizing`) requires a working API key and account balance. `Ablate_LLMPortfolio` does **not** call the LLM for final orders (strategies remain rule-based), which is useful for dry runs without credits — but it is **not** comparable to “full intelligence” along the portfolio dimension.
 
@@ -442,8 +428,6 @@ output/
   Timestamps may differ by a second between files from the same run; match files by the **`{experiment}`** segment.
 
 - **Standalone backtest** (`trading-dag-backtest`): under **`backtest_subdir`**, legacy names **without** an experiment slug: `backtest_portfolio_value_{timestamp}.png`, `backtest_trades_{timestamp}.json`, `backtest_performance_{timestamp}.csv`.
-
-- **Simple baselines** (buy-and-hold, equal-weight rebalance): curves feed the **suite** CSVs and charts; they do **not** emit `backtest_trades_*.json` in the DAG format above.
 
 **Manage output files** (reads `output_layout` from `config/config.yaml` by default; scans all three subfolders, or one with `--subdir`):
 

@@ -69,9 +69,8 @@ def _merge_coincident_equity_curves(curves_df: pd.DataFrame) -> List[Tuple[str, 
     """
     Merge experiments whose equity series are numerically identical on the same date index.
 
-    Buy-and-hold and equal-weight rebalance produce the same path when no rebalance fires
-    within the window (e.g. fewer bars than ``rebalance_every_bars``), or with a single
-    ticker. Plotting once avoids a hidden duplicate line in the legend.
+    Keeps a single plot line when two experiment names share the same path (avoids a
+    duplicate line in the legend).
     """
     groups: List[Tuple[str, pd.DataFrame]] = [
         (str(name), grp.sort_values("date").reset_index(drop=True))

@@ -48,27 +48,19 @@ def main() -> Dict[str, Any]:
         raise ValueError("Phase 2 benchmark requires mode: backtest in config")
 
     options.update(load_benchmark_options(args.benchmark_config))
-    run_buy_and_hold = bool(options.get("run_buy_and_hold", False))
-    run_equal_weight_rebalance = bool(options.get("run_equal_weight_rebalance", False))
-    rebalance_every_bars = int(options.get("rebalance_every_bars", 24))
     output_dir = options.get("output_dir")
     dag_print_frequency = int(options.get("dag_print_frequency", getattr(config, "print_frequency", 1)))
     dag_use_progress_bar = bool(options.get("dag_use_progress_bar", False))
     include_ablation_experiments = as_string_list(options.get("include_ablation_experiments"))
-    include_baseline_experiments = as_string_list(options.get("include_baseline_experiments"))
     export_individual_results = bool(options.get("export_individual_results", True))
     export_charts = bool(options.get("export_charts", True))
 
     results = run_phase2_benchmarks(
         config=config,
-        run_buy_and_hold=run_buy_and_hold,
-        run_equal_weight_rebalance=run_equal_weight_rebalance,
-        rebalance_every_bars=rebalance_every_bars,
         output_dir=output_dir,
         dag_print_frequency=dag_print_frequency,
         dag_use_progress_bar=dag_use_progress_bar,
         include_ablation_experiments=include_ablation_experiments or None,
-        include_baseline_experiments=include_baseline_experiments or None,
         export_individual_results=export_individual_results,
         export_charts=export_charts,
     )
