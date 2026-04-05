@@ -1,7 +1,7 @@
 """
 Data node - fetches market data for specified timeframes.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 import pandas as pd
 
@@ -29,7 +29,8 @@ class DataNode(BaseNode):
         data['name'] = "DataNode"
         timeframe: str = self.interval.value
         tickers = data.get('tickers', [])
-        end_time = data.get('end_date', datetime.now()) + timedelta(milliseconds=500)
+        # Default: live fetch; Binance klines use UTC (must match provider timestamp semantics).
+        end_time = data.get("end_date", datetime.now(timezone.utc)) + timedelta(milliseconds=500)
 
         prefetched_data = data.get('prefetched_data', {})
 

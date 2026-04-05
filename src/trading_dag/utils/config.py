@@ -2,7 +2,7 @@
 Configuration management.
 """
 from pydantic_settings import BaseSettings
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 import yaml
@@ -11,6 +11,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from trading_dag.utils.constants import Interval, QUANTITY_DECIMALS
 from trading_dag.utils.output_layout import OutputLayoutConfig
+from trading_dag.utils.exchange_time import coerce_timezone_field, resolve_config_timezone
 
 load_dotenv()
 
@@ -86,6 +87,13 @@ class Config(BaseSettings):
     mode: str
     start_date: datetime
     end_date: datetime
+    timezone: str = Field(
+        default="UTC",
+        description=(
+            "Timezone for naive start_date/end_date: fixed UTC offset (0, +8, -5, UTC+8) "
+            "or IANA name (e.g. Asia/Hong_Kong)."
+        ),
+    )
     primary_interval: Interval
     initial_cash: float
     initial_positions: Optional[Any] = None
@@ -144,6 +152,18 @@ class Config(BaseSettings):
 
         merged = {**data, "initial_cash": float(resolved)}
         return merged
+
+    @field_validator("timezone", mode="before")
+    @classmethod
+    def coerce_timezone(cls, v: object) -> str:
+        return coerce_timezone_field(v)
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v: str) -> str:
+        s = v.strip()
+        resolve_config_timezone(s)
+        return s
 
     @model_validator(mode='after')
     def validate_primary_interval(self):

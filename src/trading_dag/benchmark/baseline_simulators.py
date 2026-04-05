@@ -10,6 +10,7 @@ import pandas as pd
 
 from trading_dag.data.provider import BinanceDataProvider
 from trading_dag.utils.constants import Interval
+from trading_dag.utils.exchange_time import naive_in_zone_to_utc_naive
 
 
 def prepare_primary_klines(
@@ -17,9 +18,10 @@ def prepare_primary_klines(
     primary_interval: Interval,
     start_date: datetime,
     end_date: datetime,
+    naive_timezone: str = "UTC",
 ) -> Dict[str, pd.DataFrame]:
     """Fetch primary interval data for baseline simulations."""
-    provider = BinanceDataProvider()
+    provider = BinanceDataProvider(naive_timezone=naive_timezone)
     date_range = end_date - start_date
     end_date_inclusive = end_date + timedelta(days=1) - timedelta(seconds=1)
     required_k_lines = int(date_range / primary_interval.to_timedelta()) + 1
@@ -36,9 +38,10 @@ def prepare_primary_klines(
         if data is None or data.empty:
             raise ValueError(f"No historical data for {ticker} at interval {primary_interval.value}")
 
+        start_utc_naive = naive_in_zone_to_utc_naive(start_date, naive_timezone)
+        end_utc_naive = naive_in_zone_to_utc_naive(end_date, naive_timezone)
         filtered = data[
-            (data["open_time"] >= start_date) &
-            (data["open_time"] <= end_date)
+            (data["open_time"] >= start_utc_naive) & (data["open_time"] <= end_utc_naive)
         ].reset_index(drop=True)
 
         if filtered.empty:

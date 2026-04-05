@@ -2,6 +2,8 @@
 mode: live  # Trading mode: "backtest" or "live"
 
 # Date range for backtesting (only used in backtest mode). Kept in sync with config/benchmark.yaml main.
+# Timezone for naive start_date/end_date: fixed UTC offset (0, +8, -5, UTC+8) or IANA name.
+timezone: UTC
 start_date: 2025-11-01
 end_date: 2025-11-14
 

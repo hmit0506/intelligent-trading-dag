@@ -63,6 +63,7 @@ def run_dag_backtest_experiment(
         risk_management=config.risk,
         export_output_dir=bench_dir,
         experiment_label=variant_name,
+        naive_date_timezone=getattr(config, "timezone", "UTC"),
     )
     backtester.run_backtest()
     backtester.analyze_performance()

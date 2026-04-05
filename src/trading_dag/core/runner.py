@@ -4,7 +4,7 @@ Unified trading system runner for both backtest and live modes.
 import os
 import sys
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from colorama import Fore, Style, init
@@ -18,7 +18,6 @@ from trading_dag.utils.config import risk_config_to_metadata
 from trading_dag.utils.backtest_export import export_backtest_trades_and_performance
 from trading_dag.utils.output_layout import resolve_output_dirs
 from trading_dag.data.provider import BinanceDataProvider
-from datetime import timedelta
 import pandas as pd
 
 init(autoreset=True)
@@ -158,7 +157,11 @@ class TradingSystemRunner:
         if not api_key or not api_secret:
             raise ValueError("BINANCE_API_KEY and BINANCE_API_SECRET must be set to sync from exchange")
         
-        data_provider = BinanceDataProvider(api_key=api_key, api_secret=api_secret)
+        data_provider = BinanceDataProvider(
+            api_key=api_key,
+            api_secret=api_secret,
+            naive_timezone=getattr(self.config, "timezone", "UTC"),
+        )
         client = data_provider.client
         
         # Get account information
@@ -167,15 +170,14 @@ class TradingSystemRunner:
         if not account or "balances" not in account:
             raise ValueError("Could not retrieve account information from exchange")
         
-        # Get current prices for valuation
-        from datetime import datetime
+        # Get current prices for valuation (Binance kline endTime is UTC)
         current_prices = {}
         for ticker in self.config.signals.tickers:
             try:
                 latest_data = data_provider.get_history_klines_with_end_time(
                     symbol=ticker,
                     timeframe=self.config.primary_interval.value,
-                    end_time=datetime.now(),
+                    end_time=datetime.now(timezone.utc),
                     limit=1
                 )
                 if latest_data is not None and not latest_data.empty:
@@ -232,7 +234,6 @@ class TradingSystemRunner:
                 }
         """
         from colorama import Fore, Style
-        from datetime import datetime
         from trading_dag.data.provider import BinanceDataProvider
         
         # Update cash if specified
@@ -241,14 +242,14 @@ class TradingSystemRunner:
             print(f"  Initial cash: ${portfolio['cash']:,.2f}")
         
         # Get current prices for positions without cost basis
-        data_provider = BinanceDataProvider()
+        data_provider = BinanceDataProvider(naive_timezone=getattr(self.config, "timezone", "UTC"))
         current_prices = {}
         for ticker in self.config.signals.tickers:
             try:
                 latest_data = data_provider.get_history_klines_with_end_time(
                     symbol=ticker,
                     timeframe=self.config.primary_interval.value,
-                    end_time=datetime.now(),
+                    end_time=datetime.now(timezone.utc),
                     limit=1
                 )
                 if latest_data is not None and not latest_data.empty:
@@ -347,6 +348,7 @@ class TradingSystemRunner:
             initial_positions=getattr(self.config, 'initial_positions', None),  # Support initial positions in backtest
             risk_management=self.config.risk,
             export_output_dir=self.backtest_output_dir,
+            naive_date_timezone=getattr(self.config, "timezone", "UTC"),
         )
         
         print("Starting backtest...")
@@ -425,7 +427,7 @@ class TradingSystemRunner:
         init(autoreset=True)
         
         # Fetch current prices for portfolio valuation
-        data_provider = BinanceDataProvider()
+        data_provider = BinanceDataProvider(naive_timezone=getattr(self.config, "timezone", "UTC"))
         current_prices = {}
         
         try:
@@ -436,7 +438,7 @@ class TradingSystemRunner:
                     latest_data = data_provider.get_history_klines_with_end_time(
                         symbol=ticker,
                         timeframe=self.config.primary_interval.value,
-                        end_time=datetime.now()
+                        end_time=datetime.now(timezone.utc),
                     )
                     if latest_data is not None and not latest_data.empty:
                         current_prices[ticker] = float(latest_data.iloc[-1]["close"])

@@ -63,6 +63,7 @@ def run_registered_baselines(
         primary_interval=config.primary_interval,
         start_date=config.start_date,
         end_date=config.end_date,
+        naive_timezone=getattr(config, "timezone", "UTC"),
     )
 
     for spec in baseline_registry:

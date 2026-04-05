@@ -4,6 +4,8 @@
 mode: backtest  # Trading mode: "backtest" or "live"
 
 # Date range for backtesting (only used in backtest mode)
+# Fixed offset (0, +8, -5, UTC+8) or IANA name (e.g. Asia/Hong_Kong).
+timezone: UTC
 start_date: 2025-01-01
 end_date: 2025-02-01
 

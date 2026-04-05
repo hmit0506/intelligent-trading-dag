@@ -6,6 +6,8 @@
 main:
   mode: backtest
 
+  # Fixed UTC offset (0, +8, -5) or IANA name; quote "+8" in YAML if needed.
+  timezone: UTC
   start_date: 2025-01-01
   end_date: 2025-02-01
 

@@ -3,27 +3,38 @@ Binance Data Provider - handles data retrieval from Binance.
 """
 from typing import Dict, List, Optional
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from trading_dag.gateway.binance.client import Client
 from trading_dag.utils.constants import COLUMNS, NUMERIC_COLUMNS
+from trading_dag.utils.exchange_time import exchange_timestamp_ms, naive_in_zone_to_utc_naive
 
 
 class BinanceDataProvider:
     """Handles data retrieval from Binance and prepares it for the trading system."""
 
-    def __init__(self, api_key: Optional[str] = None, api_secret: Optional[str] = None):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        api_secret: Optional[str] = None,
+        *,
+        naive_timezone: str = "UTC",
+    ):
         """
-        Initialize the BinanceDataProvider with API credentials.
+        Initialize the BinanceDataProvider.
 
         Args:
             api_key: Binance API key (optional for public data)
             api_secret: Binance API secret (optional for public data)
+            naive_timezone: IANA timezone name for interpreting naive ``datetime`` arguments
+                (must match backtest ``start_date`` / ``end_date`` semantics). Examples: ``UTC``,
+                ``Asia/Hong_Kong``.
         """
         self.client = Client(api_key=api_key, api_secret=api_secret)
         self.cache_dir = Path("./cache")
         self.cache_dir.mkdir(exist_ok=True)
+        self._naive_timezone = naive_timezone
 
     def _format_timeframe(self, timeframe: str) -> str:
         """Convert timeframe format to Binance's format."""
@@ -41,24 +52,27 @@ class BinanceDataProvider:
         formatted_symbol = symbol.replace("/", "")
 
         if start_date is None:
-            start_date = datetime.now() - timedelta(days=30)
+            start_date = datetime.now(timezone.utc) - timedelta(days=30)
         if end_date is None:
-            end_date = datetime.now()
+            end_date = datetime.now(timezone.utc)
 
         cache_file = self.cache_dir / f"{formatted_symbol}_{timeframe}_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.csv"
+
+        start_utc_naive = naive_in_zone_to_utc_naive(start_date, self._naive_timezone)
+        end_utc_naive = naive_in_zone_to_utc_naive(end_date, self._naive_timezone)
 
         if use_cache and cache_file.exists():
             print(f"Loading cached data for {formatted_symbol} {timeframe}")
             cached_df = pd.read_csv(cache_file, parse_dates=['open_time', 'close_time'])
             return cached_df[
-                (cached_df['open_time'] >= start_date) &
-                (cached_df['open_time'] <= end_date)
+                (cached_df['open_time'] >= start_utc_naive) &
+                (cached_df['open_time'] <= end_utc_naive)
             ].reset_index(drop=True)
 
         print(f"Fetching historical data from Binance API for {formatted_symbol} {timeframe}")
 
-        start_ts = int(start_date.timestamp() * 1000)
-        end_ts = int(end_date.timestamp() * 1000)
+        start_ts = exchange_timestamp_ms(start_date, self._naive_timezone)
+        end_ts = exchange_timestamp_ms(end_date, self._naive_timezone)
 
         try:
             klines = self.client.get_historical_klines(
@@ -79,7 +93,7 @@ class BinanceDataProvider:
             df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
             df['close_time'] = pd.to_datetime(df['close_time'], unit='ms')
             df = df.dropna(subset=['open_time', 'close_time', 'close', 'open', 'high', 'low']).reset_index(drop=True)
-            df = df[(df['open_time'] >= start_date) & (df['open_time'] <= end_date)].reset_index(drop=True)
+            df = df[(df['open_time'] >= start_utc_naive) & (df['open_time'] <= end_utc_naive)].reset_index(drop=True)
 
             if use_cache:
                 df.to_csv(cache_file, index=False)
@@ -108,8 +122,8 @@ class BinanceDataProvider:
                 interval_delta = pd.Timedelta(hours=1)
 
             start_time = end_time - (interval_delta * limit)
-            start_ts = int(start_time.timestamp() * 1000)
-            end_ts = int(end_time.timestamp() * 1000)
+            start_ts = exchange_timestamp_ms(start_time, self._naive_timezone)
+            end_ts = exchange_timestamp_ms(end_time, self._naive_timezone)
 
             klines = self.client.get_historical_klines(
                 symbol=formatted_symbol,
@@ -129,7 +143,8 @@ class BinanceDataProvider:
             df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
             df['close_time'] = pd.to_datetime(df['close_time'], unit='ms')
             df = df.dropna(subset=['open_time', 'close_time', 'close', 'open', 'high', 'low']).reset_index(drop=True)
-            df = df[df['open_time'] <= end_time].reset_index(drop=True)
+            end_utc_naive = naive_in_zone_to_utc_naive(end_time, self._naive_timezone)
+            df = df[df['open_time'] <= end_utc_naive].reset_index(drop=True)
 
             return df
 

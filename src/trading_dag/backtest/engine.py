@@ -16,6 +16,7 @@ from trading_dag.data.provider import BinanceDataProvider
 from trading_dag.utils.config import RiskManagementConfig, risk_config_to_metadata
 from trading_dag.utils.output_layout import OutputLayoutConfig, resolve_output_dirs
 from trading_dag.utils.backtest_export import slugify_experiment_label
+from trading_dag.utils.exchange_time import naive_in_zone_to_utc_naive
 
 
 class Backtester:
@@ -42,6 +43,7 @@ class Backtester:
             risk_management: Optional[RiskManagementConfig] = None,
             export_output_dir: Optional[Path] = None,
             experiment_label: Optional[str] = None,
+            naive_date_timezone: str = "UTC",
     ):
         """
         Backtester
@@ -50,6 +52,8 @@ class Backtester:
             ``backtest_portfolio_value_{slug}_{timestamp}.png`` — same slug as
             ``export_backtest_trades_and_performance(..., experiment_label=...)``. Leave unset for
             standalone ``backtest_portfolio_value_{timestamp}.png``.
+        :param naive_date_timezone: IANA timezone for interpreting naive ``start_date`` / ``end_date``
+            (e.g. ``Asia/Hong_Kong``, ``UTC``). Must match ``Config.timezone``.
         :param primary_interval:
         :param intervals:
         :param tickers:
@@ -92,7 +96,8 @@ class Backtester:
             self.output_dir = resolve_output_dirs(Path.cwd(), OutputLayoutConfig()).backtest
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._experiment_label = (experiment_label or "").strip() or None
-        self.binance_data_provider = BinanceDataProvider()
+        self.naive_date_timezone = naive_date_timezone
+        self.binance_data_provider = BinanceDataProvider(naive_timezone=naive_date_timezone)
         self.klines: Dict[str, pd.DataFrame] = {}
         self.trade_log: List[Dict[str, Any]] = []  # To store detailed trade and portfolio information
         
@@ -340,8 +345,14 @@ class Backtester:
         # to avoid interval shifts caused by inconsistent end_time definitions.
         fetch_end_time = self.end_date
         
-        print(f"Backtest date range: {self.start_date} to {self.end_date} ({date_range})")
-        
+        print(
+            f"Backtest date range: {self.start_date} to {self.end_date} ({date_range}) "
+            f"[naive dates in {self.naive_date_timezone}; klines filtered in UTC]"
+        )
+
+        start_utc_naive = naive_in_zone_to_utc_naive(self.start_date, self.naive_date_timezone)
+        end_utc_naive = naive_in_zone_to_utc_naive(self.end_date, self.naive_date_timezone)
+
         for interval in self.intervals:
             for ticker in self.tickers:
                 # Calculate how many K-lines are needed for the backtest date range
@@ -366,10 +377,10 @@ class Backtester:
                     cache_key = f"{ticker}_{interval.value}"
                     self.prefetched_data[cache_key] = data
                     
-                    # Filter data to only use data within backtest date range for iteration
+                    # Filter to backtest window (config dates interpreted in naive_date_timezone vs UTC klines)
                     backtest_data = data[
-                        (data['open_time'] >= self.start_date) & 
-                        (data['open_time'] <= self.end_date)
+                        (data["open_time"] >= start_utc_naive)
+                        & (data["open_time"] <= end_utc_naive)
                     ].reset_index(drop=True)
                     
                     if interval == self.primary_interval:
@@ -419,16 +430,14 @@ class Backtester:
         # This allows backtesting with existing positions
         if hasattr(self, 'initial_positions') and self.initial_positions:
             from datetime import datetime
-            from trading_dag.data.provider import BinanceDataProvider
             from colorama import Fore, Style
             
             # Get prices at start_date for cost basis calculation
-            data_provider = BinanceDataProvider()
             start_prices = {}
             for ticker in self.tickers:
                 try:
                     # Get price at start_date
-                    start_data = data_provider.get_history_klines_with_end_time(
+                    start_data = self.binance_data_provider.get_history_klines_with_end_time(
                         symbol=ticker,
                         timeframe=self.primary_interval.value,
                         end_time=self.start_date,
@@ -816,13 +825,16 @@ class Backtester:
                 if self.logger:
                     self.logger.info(f"Iteration {iteration_count}/{len(data_df)}: Portfolio Value = ${total_value:,.2f}")
             
-            # Update progress bar
+            # Update progress bar (set_postfix defaults to refresh=True; avoid double refresh per iter)
             if progress_bar:
+                progress_bar.set_postfix(
+                    {
+                        "Value": f"${total_value:,.2f}",
+                        "Return": f"{portfolio_return:.2f}%",
+                    },
+                    refresh=False,
+                )
                 progress_bar.update(1)
-                progress_bar.set_postfix({
-                    'Value': f'${total_value:,.2f}',
-                    'Return': f'{portfolio_return:.2f}%'
-                })
 
             # Update performance metrics if we have enough data
             if len(self.portfolio_values) > 3:
