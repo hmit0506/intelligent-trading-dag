@@ -147,6 +147,7 @@ Example `config.yaml`:
 
 ```yaml
 mode: backtest  # or "live"
+timezone: UTC   # or "+8", "-5", "UTC+8", "Asia/Hong_Kong" — see [Timezone](#timezone)
 start_date: 2025-01-01
 end_date: 2025-02-01
 primary_interval: 1h  # Primary interval for decision-making. Automatically added to signals.intervals if not present. LLM prioritizes signals from this interval.
@@ -202,6 +203,17 @@ model:
 #   temperature: 0.0
 #   format: "json"
 ```
+
+### Timezone
+
+`timezone` applies to **naive** `start_date` / `end_date` in YAML: those clock times are interpreted in the configured zone, then converted to **UTC** for Binance API calls and for filtering klines (exchange candles are UTC).
+
+- **Fixed UTC offset (whole hours):** `UTC`, `0`, `+8`, `-5`, `UTC+8`, etc. In YAML, a bare integer like `8` is treated as **+8**.
+- **IANA names:** e.g. `Asia/Hong_Kong`, `America/New_York` (DST-aware where applicable).
+
+Console lines during prefetch (e.g. “in backtest range …”) show **first/last bar open times in this timezone**, so a bar that is `16:00` UTC displays as `00:00` the next calendar day when `timezone: "+8"`.
+
+Live fetches for “current” klines use **UTC** wall-clock for `end_time` where applicable; see `trading_dag.utils.exchange_time`.
 
 ### Risk management
 
@@ -319,7 +331,7 @@ Point the sidebar **Output directory** at your `output/` folder (or another path
 
 **Purpose.** Phase 1 answers a *capacity vs. decomposition* question: under identical market data, capital, and configuration, how does the **full multi-strategy DAG pipeline** compare to (a) **running the same engine with only one strategy enabled**, and (b) **simple non-DAG baselines**? The goal is not to prove optimality on every market regime, but to show whether the *integrated framework* behaves differently from isolated components and naive references.
 
-**What is held constant.** All DAG-based runs (`FullDAG`, `SingleMACD`, `SingleRSI`, `SingleBollinger`) share the same `Backtester` and `Agent`: same `main.start_date` / `end_date`, `signals.tickers`, `initial_positions`, margin settings, LLM (`model`), and `signals.intervals`. Only the **strategy list** changes per `DagExperimentSpec` in `phase1_registry.py`. That isolates “which strategies are active in the graph” while keeping data and portfolio mechanics aligned.
+**What is held constant.** All DAG-based runs (`FullDAG`, `SingleMACD`, `SingleRSI`, `SingleBollinger`) share the same `Backtester` and `Agent`: same `main.start_date` / `end_date`, `timezone`, `signals.tickers`, `initial_positions`, margin settings, LLM (`model`), and `signals.intervals`. Only the **strategy list** changes per `DagExperimentSpec` in `phase1_registry.py`. That isolates “which strategies are active in the graph” while keeping data and portfolio mechanics aligned.
 
 **DAG experiment groups.**
 
@@ -328,8 +340,10 @@ Point the sidebar **Output directory** at your `output/` folder (or another path
 
 **Baselines (non-DAG).** Implemented in `baseline_simulators.py` and driven by `get_phase1_baseline_registry()`:
 
-- **Buy and hold** — Initial capital allocated once to a static mix; no strategy signals or LLM.
+- **Buy and hold** — Starting portfolio value allocated once to a static mix; no strategy signals or LLM.
 - **Equal-weight rebalance** — Periodically reweights to equal nominal exposure across tickers (`rebalance_every_bars` in primary-interval bars).
+
+**Starting value vs. DAG.** Passive baselines use **`cash + long position value at the first primary bar’s close`** when `initial_positions` includes longs (`benchmark/initial_nav.py`), so equity charts start at the **same total NAV** as DAG runs. Previously only `initial_cash` was used, which misaligned charts when positions were configured.
 
 These provide *interpretable* references (passive and rule-based) rather than competing “oracle” models.
 

@@ -10,6 +10,7 @@ from typing import Any, Dict, List, TYPE_CHECKING
 import pandas as pd
 
 from trading_dag.benchmark.baseline_simulators import prepare_primary_klines
+from trading_dag.benchmark.initial_nav import benchmark_starting_portfolio_value_usd
 from trading_dag.benchmark.equity_metrics import build_equity_metrics, safe_float
 from trading_dag.benchmark.experiment_types import ExperimentResult
 from trading_dag.benchmark.figures import export_benchmark_figures
@@ -66,6 +67,11 @@ def run_registered_baselines(
         naive_timezone=getattr(config, "timezone", "UTC"),
     )
 
+    first_bar_close = {
+        t: float(klines[t].iloc[0]["close"]) for t in config.signals.tickers
+    }
+    starting_nav = benchmark_starting_portfolio_value_usd(config, first_bar_close)
+
     for spec in baseline_registry:
         experiment_idx += 1
         print(f"\n[{phase_tag}][{experiment_idx}/{total_experiments}] {baseline_label}: {spec.name} - start")
@@ -73,7 +79,7 @@ def run_registered_baselines(
         baseline_curve = spec.simulator(
             tickers=config.signals.tickers,
             klines=klines,
-            initial_cash=float(config.initial_cash),
+            initial_cash=starting_nav,
             **spec.kwargs,
         )
         baseline_metrics = build_equity_metrics(baseline_curve)

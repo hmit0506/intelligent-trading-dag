@@ -15,9 +15,9 @@ main:
   # Keep dates / primary_interval / portfolio / signals / model / risk in lockstep with config.yaml.
   # Historical window (Binance klines): adjust if you need a different regime or length.
   # Timezone for naive start_date/end_date: fixed offset (0, +8, -5, UTC+8) or IANA (Asia/Hong_Kong).
-  timezone: UTC
-  start_date: 2025-11-01
-  end_date: 2025-11-02
+  timezone: "+8"
+  start_date: 2026-01-01
+  end_date: 2026-01-04
 
   primary_interval: 1h
 

@@ -145,6 +145,7 @@ cp config/config.example.yaml config/config.yaml
 
 ```yaml
 mode: backtest  # 或 "live"
+timezone: UTC   # 或 "+8"、"Asia/Hong_Kong" 等 — 见 [时区](#时区)
 start_date: 2025-01-01
 end_date: 2025-02-01
 primary_interval: 1h  # 决策的主要间隔。如果未在signals.intervals中列出，将自动添加。LLM优先考虑此间隔的信号。
@@ -200,6 +201,15 @@ model:
 #   temperature: 0.0
 #   format: "json"
 ```
+
+### 时区
+
+YAML 里**无时区后缀**的 `start_date` / `end_date` 会按本字段解释为**当地墙上时间**，再换算为 **UTC** 去请求 Binance、筛选 K 线（交易所 K 线为 UTC）。
+
+- **固定 UTC 偏移（整点）：** `UTC`、`0`、`+8`、`-5`、`UTC+8` 等；YAML 里写裸整数 `8` 会当作 **+8**。
+- **IANA 名称：** 如 `Asia/Hong_Kong`、`America/New_York`（有夏令时的地区会按规则换算）。
+
+预取日志里「回测区间内 K 线」的起止时间会按 **`timezone` 显示**（例如 UTC 的 `16:00` 在 `+8` 下显示为次日 `00:00`）。实现见 `trading_dag.utils.exchange_time`。
 
 ### 风险管理
 
@@ -311,7 +321,7 @@ uv run streamlit run src/trading_dag/viz/streamlit_app.py
 
 **研究目的。** Phase 1 回答的是**整体 vs 分解**问题：在相同行情、资金与配置下，**完整多策略 DAG 管线**与「(a) 只启用**单一策略**的同一套回测引擎」以及「(b) **不走 DAG 的简单基线**」相比，行为与指标有何差异？目标不是证明在所有市场都最优，而是展示**集成框架**是否与「单模块抽取」和「朴素对照」有系统性差别，便于写进 FYP 的方法与实验章节。
 
-**控制变量。** 所有 DAG 类实验（`FullDAG`、`SingleMACD`、`SingleRSI`、`SingleBollinger`）共用同一个 `Backtester` / `Agent`：`main` 中的日期、`signals.tickers`、`initial_positions`、保证金与 LLM（`model`）、以及 `signals.intervals` 均一致。`phase1_registry.py` 里每个 `DagExperimentSpec` **只改策略列表**，从而把差异归因到「图里激活了哪些策略节点」，数据加载与组合记账方式保持一致。
+**控制变量。** 所有 DAG 类实验（`FullDAG`、`SingleMACD`、`SingleRSI`、`SingleBollinger`）共用同一个 `Backtester` / `Agent`：`main` 中的日期、`timezone`、`signals.tickers`、`initial_positions`、保证金与 LLM（`model`）、以及 `signals.intervals` 均一致。`phase1_registry.py` 里每个 `DagExperimentSpec` **只改策略列表**，从而把差异归因到「图里激活了哪些策略节点」，数据加载与组合记账方式保持一致。
 
 **DAG 实验组含义。**
 
@@ -320,8 +330,10 @@ uv run streamlit run src/trading_dag/viz/streamlit_app.py
 
 **非 DAG 基线。** 实现在 `baseline_simulators.py`，由 `get_phase1_baseline_registry()` 驱动：
 
-- **买入并持有** — 期初一次性配置权重后静态持有，不读策略信号、不调 LLM。
+- **买入并持有** — 以与 DAG 一致的**期初总净值**一次性按权重买入后静态持有，不读策略信号、不调 LLM。
 - **等权定期再平衡** — 按 `rebalance_every_bars`（以 `primary_interval` 的 K 线为单位）调回各标的名义权重近似相等。
+
+**起始净值与 DAG 对齐。** 若配置了 `initial_positions` 多头，被动基线使用 **`现金 + 各多头 × 第一根主周期 K 收盘价`**（`benchmark/initial_nav.py`）作为仿真起点，权益图与 FullDAG 从**同一总净值**出发；旧版仅用 `initial_cash` 会导致曲线整体偏低、不宜直接叠图比较。
 
 二者提供**可解释、易向答辩委员会说明**的对照，而非宣称其为「强模型下界」。
 

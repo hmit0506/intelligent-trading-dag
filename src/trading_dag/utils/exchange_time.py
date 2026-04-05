@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Union
+from typing import Any, Union
 from zoneinfo import ZoneInfo
 
 # Whole-hour offsets only (matches user-facing "+N / -N").
@@ -118,3 +118,32 @@ def naive_in_zone_to_utc_naive(dt: datetime, tz_spec: Union[str, int]) -> dateti
         return dt.astimezone(timezone.utc).replace(tzinfo=None)
     tz = resolve_config_timezone(tz_spec)
     return dt.replace(tzinfo=tz).astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def format_utc_naive_for_display(dt: Any, tz_spec: Union[str, int]) -> str:
+    """
+    Format a Binance kline ``open_time`` / ``close_time`` value for logs.
+
+    Stored values are **naive UTC** (no tz label). This converts to the user's
+    ``timezone`` config (e.g. ``+8``) so a bar that opens at 16:00 UTC prints as
+    ``00:00`` on the next calendar day in UTC+8.
+    """
+    if dt is None:
+        return ""
+    try:
+        import pandas as pd
+
+        if isinstance(dt, pd.Timestamp):
+            if pd.isna(dt):
+                return ""
+            dt = dt.to_pydatetime()
+    except ImportError:
+        pass
+    if not isinstance(dt, datetime):
+        return str(dt)
+    if dt.tzinfo is not None:
+        utc_aware = dt.astimezone(timezone.utc)
+    else:
+        utc_aware = dt.replace(tzinfo=timezone.utc)
+    local = utc_aware.astimezone(resolve_config_timezone(tz_spec))
+    return local.strftime("%Y-%m-%d %H:%M:%S")

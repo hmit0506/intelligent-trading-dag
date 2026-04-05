@@ -16,7 +16,7 @@ from trading_dag.data.provider import BinanceDataProvider
 from trading_dag.utils.config import RiskManagementConfig, risk_config_to_metadata
 from trading_dag.utils.output_layout import OutputLayoutConfig, resolve_output_dirs
 from trading_dag.utils.backtest_export import slugify_experiment_label
-from trading_dag.utils.exchange_time import naive_in_zone_to_utc_naive
+from trading_dag.utils.exchange_time import format_utc_naive_for_display, naive_in_zone_to_utc_naive
 
 
 class Backtester:
@@ -392,7 +392,16 @@ class Backtester:
                     warmup_count = total_count - backtest_count
                     
                     if backtest_count > 0:
-                        print(f"    Retrieved {total_count} total K-lines, {backtest_count} in backtest range ({backtest_data.iloc[0]['open_time']} to {backtest_data.iloc[-1]['open_time']}), {warmup_count} before start_date")
+                        o0 = format_utc_naive_for_display(
+                            backtest_data.iloc[0]["open_time"], self.naive_date_timezone
+                        )
+                        o1 = format_utc_naive_for_display(
+                            backtest_data.iloc[-1]["open_time"], self.naive_date_timezone
+                        )
+                        print(
+                            f"    Retrieved {total_count} total K-lines, {backtest_count} in backtest range "
+                            f"({o0} to {o1}, {self.naive_date_timezone}), {warmup_count} warmup bars before window"
+                        )
                     elif total_count > 0:
                         print(f"    Retrieved {total_count} total K-lines, but none in backtest range (all before start_date)")
                     else:
@@ -525,7 +534,16 @@ class Backtester:
         else:
             self.portfolio_values = []
 
-        print(f"Backtest will process {len(data_df)} data points from {self.start_date} to {self.end_date}")
+        if len(data_df) > 0:
+            _fo = format_utc_naive_for_display(data_df.iloc[0]["open_time"], self.naive_date_timezone)
+            _lo = format_utc_naive_for_display(data_df.iloc[-1]["open_time"], self.naive_date_timezone)
+            print(
+                f"Backtest will process {len(data_df)} primary-interval bars "
+                f"(first open {self.primary_interval.value}: {_fo}, last open: {_lo}; "
+                f"wall-clock in {self.naive_date_timezone})"
+            )
+        else:
+            print(f"Backtest will process 0 data points (config window {self.start_date} to {self.end_date})")
         
         # Display initial portfolio information
         from colorama import Fore, Style
