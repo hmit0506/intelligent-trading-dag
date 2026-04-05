@@ -334,6 +334,8 @@ class TradingSystemRunner:
         timestamp = now_config_wall_strftime("%Y%m%d_%H%M%S", tz)
         log_file = str(self.backtest_output_dir / f"backtest_{timestamp}.log")
 
+        _mt = self.config.model.temperature
+        _model_temp = 0.0 if _mt is None else float(_mt)
         backtester = Backtester(
             primary_interval=self.config.primary_interval,
             intervals=self.config.signals.intervals,
@@ -347,6 +349,7 @@ class TradingSystemRunner:
             model_name=self.config.model.name,
             model_provider=self.config.model.provider,
             model_base_url=self.config.model.base_url,
+            model_temperature=_model_temp,
             initial_margin_requirement=self.config.margin_requirement,
             print_frequency=getattr(self.config, 'print_frequency', 1),  # Default: print every iteration
             use_progress_bar=getattr(self.config, 'use_progress_bar', True),  # Default: use progress bar
@@ -384,6 +387,8 @@ class TradingSystemRunner:
         end_wall = utc_naive_instant_to_wall_naive(
             datetime.now(timezone.utc).replace(tzinfo=None), tz
         )
+        _mt = self.config.model.temperature
+        _model_temp = 0.0 if _mt is None else float(_mt)
         result = agent.run(
             primary_interval=self.config.primary_interval,
             tickers=self.config.signals.tickers,
@@ -393,6 +398,7 @@ class TradingSystemRunner:
             model_name=self.config.model.name,
             model_provider=self.config.model.provider,
             model_base_url=self.config.model.base_url,
+            model_temperature=_model_temp,
             # No future_timepoints - decisions based only on current signals
         )
         

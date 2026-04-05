@@ -37,64 +37,79 @@ except ImportError:
 
 
 @lru_cache(maxsize=None)
-def get_llm(provider: str, model: str, base_url: Optional[str] = None):
+def get_llm(
+    provider: str,
+    model: str,
+    base_url: Optional[str],
+    temperature: float,
+):
     """
     Return a cached LLM instance based on provider and model.
+
+    ``temperature`` is passed through to the provider client (portfolio LLM path).
+    Use ``0.0`` for minimum sampling variance where the API supports it.
+
     Supported providers: openai, groq, openrouter, gemini, anthropic, ollama
     """
     timeout = 120
     max_retries = 3
 
     if provider == "openai":
-        base_url = base_url or "https://api.openai.com/v1"
+        resolved_base = base_url or "https://api.openai.com/v1"
         return ChatOpenAI(
             api_key=os.getenv("OPENAI_API_KEY"),
-            base_url=base_url,
+            base_url=resolved_base,
             model=model,
+            temperature=temperature,
             timeout=timeout,
             max_retries=max_retries,
         )
     elif provider == "groq":
-        base_url = base_url or "https://api.groq.com/v1"
+        resolved_base = base_url or "https://api.groq.com/v1"
         return ChatGroq(
             api_key=os.getenv("GROQ_API_KEY"),
-            base_url=base_url,
+            base_url=resolved_base,
             model=model,
+            temperature=temperature,
             timeout=timeout,
             max_retries=max_retries,
         )
     elif provider == "openrouter":
-        base_url = base_url or "https://openrouter.ai/api/v1"
+        resolved_base = base_url or "https://openrouter.ai/api/v1"
         return ChatOpenAI(
             api_key=os.getenv("OPENROUTER_API_KEY"),
-            base_url=base_url,
+            base_url=resolved_base,
             model=model,
+            temperature=temperature,
             timeout=timeout,
             max_retries=max_retries,
         )
     elif provider == "gemini":
-        base_url = base_url or "https://generativelanguage.googleapis.com/v1beta"
+        resolved_base = base_url or "https://generativelanguage.googleapis.com/v1beta"
         return ChatGoogleGenerativeAI(
             google_api_key=os.getenv("GOOGLE_API_KEY"),
-            base_url=base_url,
+            base_url=resolved_base,
             model=model,
+            temperature=temperature,
             timeout=timeout,
             max_retries=max_retries,
         )
     elif provider == "anthropic":
-        base_url = base_url or "https://api.anthropic.com"
+        resolved_base = base_url or "https://api.anthropic.com"
         return ChatAnthropic(
             api_key=os.getenv("ANTHROPIC_API_KEY"),
-            base_url=base_url,
+            base_url=resolved_base,
             model=model,
+            temperature=temperature,
             timeout=timeout,
             max_retries=max_retries,
         )
     elif provider == "ollama":
-        base_url = base_url or "http://localhost:11434"
+        resolved_base = base_url or "http://localhost:11434"
         return ChatOllama(
             model=model,
-            base_url=base_url,
+            base_url=resolved_base,
+            temperature=temperature,
             timeout=timeout,
         )
     else:

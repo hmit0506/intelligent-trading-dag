@@ -69,7 +69,11 @@ class ModelConfig(BaseModel):
     name: str
     provider: str
     base_url: Optional[str] = None
-    temperature: Optional[float] = 0.0
+    temperature: Optional[float] = Field(
+        default=0.0,
+        description="Passed to the portfolio Chat model (LangChain). Use 0.0 for minimum sampling; "
+        "APIs may still be non-deterministic.",
+    )
     format: Optional[str] = "json"
 
     @model_validator(mode='after')

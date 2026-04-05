@@ -49,6 +49,7 @@ class Agent:
         model_name: str = "gpt-4o",
         model_provider: str = "openai",
         model_base_url: Optional[str] = None,
+        model_temperature: float = 0.0,
         future_timepoints: Optional[Dict[str, Dict[str, float]]] = None,
         prefetched_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
@@ -64,6 +65,7 @@ class Agent:
             model_name: LLM model name
             model_provider: LLM provider
             model_base_url: Optional base URL for LLM
+            model_temperature: Sampling temperature for the portfolio LLM (from config ``model.temperature``).
             future_timepoints: Optional future price projections by interval and ticker
             prefetched_data: Optional prefetched data dictionary for backtest mode
 
@@ -88,6 +90,7 @@ class Agent:
             "model_name": model_name,
             "model_provider": model_provider,
             "model_base_url": model_base_url,
+            "model_temperature": float(model_temperature),
             "use_llm_portfolio": True,
             "ablation_full_risk": True,
         }

@@ -204,6 +204,10 @@ model:
 #   format: "json"
 ```
 
+### Model temperature
+
+`model.temperature` in `config.yaml` (and `main.model` in `benchmark.yaml`) is read by `TradingSystemRunner`, `Backtester`, and `dag_backtest_runner`, passed through `Agent.run(..., model_temperature=...)`, and forwarded to `get_llm()` in `trading_dag/llm/llm.py`. It sets the **sampling temperature on the portfolio Chat model** (OpenAI-compatible, Groq, Anthropic, Gemini, Ollama). Strategy agent nodes do not use this field today. Prefer `0.0` for the lowest variance; APIs may still be non-deterministic at `0`.
+
 ### Timezone
 
 `timezone` applies to **naive** `start_date` / `end_date` in YAML: those clock times are interpreted in the configured zone, then converted to **UTC** for Binance API calls and for filtering klines (exchange candles are UTC).
@@ -254,7 +258,7 @@ risk:
 
 The same structure is also emitted as a LangGraph `HumanMessage` for tracing; that is **not** the same payload as the portfolio LLM’s main structured input.
 
-**Portfolio layer.** `PortfolioManagementNode` supplies `current_prices`, `max_shares` (limit ÷ price, or `0` if invalid), and `suggested_quantities` to the LLM. It does **not** embed the full `reasoning` dict in the prompt. `summarize_risk_reasoning_for_prompt()` in `portfolio.py` builds a short English **`risk_context_summary`** per ticker so the model sees why the cap was computed. Enabling `show_reasoning` only adds console traces. **Rule-based** portfolio (`Ablate_LLMPortfolio`) skips the LLM for final orders but still uses those numeric caps.
+**Portfolio layer.** `PortfolioManagementNode` supplies `current_prices`, `max_shares` (limit ÷ price, or `0` if invalid), and `suggested_quantities` to the LLM. It does **not** embed the full `reasoning` dict in the prompt. `summarize_risk_reasoning_for_prompt()` in `portfolio.py` builds a short English **`risk_context_summary`** per ticker so the model sees why the cap was computed. The portfolio LLM uses **`model.temperature`** from config (see [Model temperature](#model-temperature)). Enabling `show_reasoning` only adds console traces. **Rule-based** portfolio (`Ablate_LLMPortfolio`) skips the LLM for final orders but still uses those numeric caps.
 
 **Sizing (full path, default).** `metadata["ablation_full_risk"]` is true.
 

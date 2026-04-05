@@ -37,6 +37,7 @@ class Backtester:
             model_name: str = "gpt-4o",
             model_provider: str = "openai",
             model_base_url: Optional[str] = None,
+            model_temperature: float = 0.0,
             initial_margin_requirement: float = 0.0,
             show_agent_graph: bool = False,
             show_reasoning: bool = False,
@@ -69,6 +70,7 @@ class Backtester:
         :param model_name:
         :param model_provider:
         :param model_base_url: model base url
+        :param model_temperature: LLM temperature for portfolio node (see ``Config.model.temperature``).
         :param initial_margin_requirement:
         :param show_agent_graph:
         :param show_reasoning:
@@ -88,6 +90,7 @@ class Backtester:
         self.model_name = model_name
         self.model_provider = model_provider
         self.model_base_url = model_base_url
+        self.model_temperature = float(model_temperature)
         self.show_agent_graph = show_agent_graph
         self.show_reasoning = show_reasoning
         self.print_frequency = print_frequency  # Print every N iterations
@@ -631,6 +634,7 @@ class Backtester:
                 model_name=self.model_name,
                 model_provider=self.model_provider,
                 model_base_url=self.model_base_url,
+                model_temperature=self.model_temperature,
                 show_reasoning=self.show_reasoning,
                 prefetched_data=prefetched_data,
             )

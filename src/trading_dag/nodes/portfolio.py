@@ -109,6 +109,8 @@ class PortfolioManagementNode(BaseNode):
 
         use_llm = bool(state["metadata"].get("use_llm_portfolio", True))
         if use_llm:
+            _mt = state["metadata"].get("model_temperature", 0.0)
+            _temp = 0.0 if _mt is None else float(_mt)
             result = generate_trading_decision(
                 tickers=tickers,
                 signals_by_ticker=signals_by_ticker,
@@ -120,6 +122,7 @@ class PortfolioManagementNode(BaseNode):
                 model_name=state["metadata"]["model_name"],
                 model_provider=state["metadata"]["model_provider"],
                 model_base_url=state["metadata"]["model_base_url"],
+                model_temperature=_temp,
                 future_timepoints=future_timepoints,
                 intervals=interval_strings,
                 primary_interval=primary_interval_str,
@@ -248,6 +251,7 @@ def generate_trading_decision(
     model_name: str,
     model_provider: str,
     model_base_url: Optional[str] = None,
+    model_temperature: float = 0.0,
     future_timepoints: Optional[Dict[str, Dict[str, float]]] = None,
     intervals: Optional[List[str]] = None,
     primary_interval: Optional[str] = None
@@ -499,7 +503,12 @@ For EACH timepoint, you need to:
         future_timepoint_structure = ""
         future_timepoint_important = """- Only provide the "now" timepoint decision (no future timepoints)"""
 
-    llm = get_llm(provider=model_provider, model=model_name, base_url=model_base_url)
+    llm = get_llm(
+        provider=model_provider,
+        model=model_name,
+        base_url=model_base_url,
+        temperature=float(model_temperature),
+    )
     chain = prompt | llm | json_parser
 
     result = chain.invoke({

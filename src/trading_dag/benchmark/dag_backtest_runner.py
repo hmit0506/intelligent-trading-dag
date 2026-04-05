@@ -41,6 +41,8 @@ def run_dag_backtest_experiment(
     """
     bench_dir = resolve_output_dirs(Path.cwd(), config.output_layout).benchmark
 
+    _mt = config.model.temperature
+    _model_temp = 0.0 if _mt is None else float(_mt)
     backtester = Backtester(
         primary_interval=config.primary_interval,
         intervals=config.signals.intervals,
@@ -52,6 +54,7 @@ def run_dag_backtest_experiment(
         model_name=config.model.name,
         model_provider=config.model.provider,
         model_base_url=config.model.base_url,
+        model_temperature=_model_temp,
         initial_margin_requirement=config.margin_requirement,
         show_agent_graph=False,
         show_reasoning=False,
