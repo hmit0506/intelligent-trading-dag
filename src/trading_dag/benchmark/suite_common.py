@@ -71,6 +71,7 @@ def run_registered_baselines(
         t: float(klines[t].iloc[0]["close"]) for t in config.signals.tickers
     }
     starting_nav = benchmark_starting_portfolio_value_usd(config, first_bar_close)
+    tz = getattr(config, "timezone", "UTC")
 
     for spec in baseline_registry:
         experiment_idx += 1
@@ -80,6 +81,7 @@ def run_registered_baselines(
             tickers=config.signals.tickers,
             klines=klines,
             initial_cash=starting_nav,
+            display_timezone=tz,
             **spec.kwargs,
         )
         baseline_metrics = build_equity_metrics(baseline_curve)
@@ -123,6 +125,7 @@ def export_ranked_suite_outputs(
     timestamp: str,
     export_individual_results: bool,
     export_charts: bool = True,
+    chart_timezone: str = "UTC",
 ) -> Dict[str, Any]:
     """Build ranked summary DataFrame, write combined and optional per-experiment CSVs."""
     summary_rows = [_experiment_to_summary_row(exp) for exp in experiments]
@@ -154,6 +157,7 @@ def export_ranked_suite_outputs(
             out_dir,
             file_prefix,
             timestamp,
+            chart_timezone=chart_timezone,
         )
 
     return {

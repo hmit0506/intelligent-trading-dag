@@ -15,6 +15,7 @@ from trading_dag.viz.helpers import (
     _plotly_equity,
     _preview_json,
     _read_standard_backtest_perf_for_plot,
+    _workspace_chart_timezone,
 )
 
 
@@ -60,6 +61,7 @@ def render(backtest_dir: Path) -> None:
         if plot_df is None or plot_df.empty:
             st.warning("Could not read portfolio value time series from this CSV.")
         else:
+            chart_tz = _workspace_chart_timezone()
             tr, pnl, sharpe, mdd = _kpis_from_value_series(plot_df["portfolio_value"])
             k1, k2, k3, k4 = st.columns(4)
             k1.metric("Total return", f"{tr:.2f}%" if tr is not None else "—")
@@ -69,7 +71,7 @@ def render(backtest_dir: Path) -> None:
             st.caption(
                 "Sharpe uses bar-to-bar returns scaled by √252; if your backtest step is not ~daily, treat it as indicative only."
             )
-            st.plotly_chart(_plotly_equity(plot_df), use_container_width=True)
+            st.plotly_chart(_plotly_equity(plot_df, chart_timezone=chart_tz), use_container_width=True)
             with st.expander("Performance table preview"):
                 show_cols = [c for c in plot_df.columns if c not in ("_plot_date", "experiment")]
                 st.dataframe(plot_df[show_cols].head(500), use_container_width=True, hide_index=True)

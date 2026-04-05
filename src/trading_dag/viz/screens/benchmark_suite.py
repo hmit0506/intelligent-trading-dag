@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from trading_dag.viz.helpers import (
+    _benchmark_suite_chart_timezone,
     _is_benchmark_equity_csv,
     _is_benchmark_summary_csv,
     _list_csvs,
@@ -103,7 +104,8 @@ def render(benchmark_dir: Path) -> None:
             if df_eq is None or df_eq.empty:
                 st.warning("Could not parse equity time series (need date + portfolio value).")
             else:
-                st.plotly_chart(_plotly_equity(df_eq), use_container_width=True)
+                chart_tz = _benchmark_suite_chart_timezone()
+                st.plotly_chart(_plotly_equity(df_eq, chart_timezone=chart_tz), use_container_width=True)
                 with st.expander("Table preview"):
                     show_cols = [c for c in df_eq.columns if c != "_plot_date"]
                     st.dataframe(df_eq[show_cols].head(500), use_container_width=True, hide_index=True)

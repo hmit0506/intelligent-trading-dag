@@ -345,6 +345,8 @@ Point the sidebar **Output directory** at your `output/` folder (or another path
 
 **Starting value vs. DAG.** Passive baselines use **`cash + long position value at the first primary bar’s close`** when `initial_positions` includes longs (`benchmark/initial_nav.py`), so equity charts start at the **same total NAV** as DAG runs. Previously only `initial_cash` was used, which misaligned charts when positions were configured.
 
+**When buy-and-hold equals equal-weight rebalance.** With **one ticker**, both baselines are always the same path. With **multiple tickers**, they match until the **first** rebalance: if the backtest has **fewer primary bars than** `rebalance_every_bars`, no rebalance runs and the two curves stay **identical**. Lower `rebalance_every_bars` (e.g. `1` or `6`) on short windows to see separation. Comparison charts merge numerically identical series into one legend entry (e.g. `BuyAndHold / EqualWeightRebalance`).
+
 These provide *interpretable* references (passive and rule-based) rather than competing “oracle” models.
 
 **Metrics.** Per experiment, equity is the backtester’s portfolio value time series (or baseline simulation). `equity_metrics.build_equity_metrics` derives returns, Sharpe, Sortino, drawdown, win rate, etc. Summary rows are ranked for quick comparison; for a formal report you should treat statistical significance, transaction costs, and robustness across windows separately.

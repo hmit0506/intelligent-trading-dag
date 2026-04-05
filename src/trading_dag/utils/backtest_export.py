@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional, Tuple
+
+from trading_dag.utils.exchange_time import now_config_wall_strftime
 
 
 def _slugify_label(name: str) -> str:
@@ -30,16 +31,13 @@ def export_backtest_trades_and_performance(
     """
     Write ``backtest_trades_*.json`` (``trade_log``) and optional ``backtest_performance_*.csv``.
 
-    Same structure as standalone backtest: JSON is ``json.dump(..., indent=2, default=str)``;
-    CSV is ``DataFrame(portfolio_values).to_csv`` when values exist.
-
-    When *experiment_label* is empty, filenames match the legacy runner:
-    ``backtest_trades_{timestamp}.json``, ``backtest_performance_{timestamp}.csv``.
-    When set (e.g. benchmark variant name), insert before the timestamp so runs do not overwrite.
+    ``Date`` / ``date`` fields use the configured display timezone (wall clock, naive), consistent
+    with terminal tables and portfolio PNGs. Filename timestamps use the same timezone.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tz = getattr(backtester, "naive_date_timezone", "UTC")
+    ts = now_config_wall_strftime("%Y%m%d_%H%M%S", tz)
     if experiment_label.strip():
         slug = slugify_experiment_label(experiment_label)
         json_path = output_dir / f"backtest_trades_{slug}_{ts}.json"

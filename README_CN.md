@@ -335,6 +335,8 @@ uv run streamlit run src/trading_dag/viz/streamlit_app.py
 
 **起始净值与 DAG 对齐。** 若配置了 `initial_positions` 多头，被动基线使用 **`现金 + 各多头 × 第一根主周期 K 收盘价`**（`benchmark/initial_nav.py`）作为仿真起点，权益图与 FullDAG 从**同一总净值**出发；旧版仅用 `initial_cash` 会导致曲线整体偏低、不宜直接叠图比较。
 
+**何时买入持有与等权再平衡完全重合。** **单标的**时两条基线永远同路径。**多标的**时，在**第一次再平衡发生之前**两条线也相同；若回测窗口里 **主周期 K 线根数少于** `rebalance_every_bars`，整段都不会触发再平衡，两条线会一直叠在一起。短窗口可把 `rebalance_every_bars` 调小（如 `1` 或 `6`）才能看出差别。对比图会把数值完全相同的曲线**合并为一条**，图例写成 `BuyAndHold / EqualWeightRebalance`。
+
 二者提供**可解释、易向答辩委员会说明**的对照，而非宣称其为「强模型下界」。
 
 **指标与产物。** 每条权益曲线来自回测器组合价值或基线仿真；`equity_metrics.build_equity_metrics` 计算收益、Sharpe、Sortino、回撤、胜率等。汇总表按收益排序仅为速览；**正式报告**中仍应单独讨论显著性、成本敏感性、多窗口稳健性等（本 README 不替代统计小节）。

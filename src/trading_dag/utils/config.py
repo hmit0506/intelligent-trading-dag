@@ -90,8 +90,9 @@ class Config(BaseSettings):
     timezone: str = Field(
         default="UTC",
         description=(
-            "Timezone for naive start_date/end_date: fixed UTC offset (0, +8, -5, UTC+8) "
-            "or IANA name (e.g. Asia/Hong_Kong)."
+            "Wall-clock timezone for naive start_date/end_date, logs, exports (CSV/JSON/PNG), "
+            "and live decision timestamps: fixed offset (0, +8, -5, UTC+8) or IANA (e.g. Asia/Hong_Kong). "
+            "Exchange fetches still use UTC internally for API alignment."
         ),
     )
     primary_interval: Interval

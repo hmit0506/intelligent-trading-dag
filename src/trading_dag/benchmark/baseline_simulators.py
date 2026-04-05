@@ -10,7 +10,7 @@ import pandas as pd
 
 from trading_dag.data.provider import BinanceDataProvider
 from trading_dag.utils.constants import Interval
-from trading_dag.utils.exchange_time import naive_in_zone_to_utc_naive
+from trading_dag.utils.exchange_time import naive_in_zone_to_utc_naive, utc_naive_instant_to_wall_naive
 
 
 def prepare_primary_klines(
@@ -64,6 +64,7 @@ def simulate_buy_and_hold(
     tickers: List[str],
     klines: Dict[str, pd.DataFrame],
     initial_cash: float,
+    display_timezone: str = "UTC",
 ) -> pd.DataFrame:
     """Simulate equal-weight buy and hold baseline."""
     n = ensure_same_length(klines)
@@ -79,7 +80,8 @@ def simulate_buy_and_hold(
 
     rows: List[Dict[str, Any]] = []
     for idx in range(n):
-        row_date = klines[tickers[0]].iloc[idx]["open_time"]
+        row_utc = klines[tickers[0]].iloc[idx]["open_time"]
+        row_date = utc_naive_instant_to_wall_naive(row_utc, display_timezone)
         value = 0.0
         for ticker in tickers:
             price = float(klines[ticker].iloc[idx]["close"])
@@ -94,6 +96,7 @@ def simulate_equal_weight_rebalance(
     klines: Dict[str, pd.DataFrame],
     initial_cash: float,
     rebalance_every_bars: int,
+    display_timezone: str = "UTC",
 ) -> pd.DataFrame:
     """Simulate equal-weight periodic rebalance baseline (zero transaction costs)."""
     n = ensure_same_length(klines)
@@ -113,7 +116,8 @@ def simulate_equal_weight_rebalance(
     for idx in range(n):
         prices = {ticker: float(klines[ticker].iloc[idx]["close"]) for ticker in tickers}
         total_value = sum(holdings[ticker] * prices[ticker] for ticker in tickers)
-        row_date = klines[tickers[0]].iloc[idx]["open_time"]
+        row_utc = klines[tickers[0]].iloc[idx]["open_time"]
+        row_date = utc_naive_instant_to_wall_naive(row_utc, display_timezone)
         rows.append({"date": row_date, "portfolio_value": total_value})
 
         if idx > 0 and idx % rebalance_every_bars == 0:

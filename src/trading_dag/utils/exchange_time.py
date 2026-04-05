@@ -147,3 +147,43 @@ def format_utc_naive_for_display(dt: Any, tz_spec: Union[str, int]) -> str:
         utc_aware = dt.replace(tzinfo=timezone.utc)
     local = utc_aware.astimezone(resolve_config_timezone(tz_spec))
     return local.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def series_utc_naive_to_config_wall_naive(series: Any, tz_spec: Union[str, int]) -> Any:
+    """
+    Interpret a datetime series as Binance **UTC** naive instants; return naive datetimes
+    whose clock face matches **tz_spec**.
+
+    Use at the boundary when converting kline timestamps for user-facing storage; kline
+    DataFrames in memory stay UTC-naive for exchange alignment.
+    """
+    import pandas as pd
+
+    ts = pd.to_datetime(series)
+    if ts.dt.tz is not None:
+        ts = ts.dt.tz_convert("UTC")
+    else:
+        ts = ts.dt.tz_localize("UTC")
+    target = resolve_config_timezone(tz_spec)
+    local = ts.dt.tz_convert(target)
+    return local.dt.tz_localize(None)
+
+
+def utc_naive_instant_to_wall_naive(dt: Any, tz_spec: Union[str, int]) -> Any:
+    """
+    Convert a single Binance **UTC-naive** instant to a **naive** datetime whose clock face
+    matches *tz_spec* (same convention as exported ``Date`` / ``date`` columns).
+    """
+    import pandas as pd
+
+    out = series_utc_naive_to_config_wall_naive(pd.Series([dt]), tz_spec)
+    return out.iloc[0]
+
+
+def now_config_wall_strftime(fmt: str, tz_spec: Union[str, int]) -> str:
+    """Format the current UTC instant as a wall-clock timestamp string in *tz_spec*."""
+    import pandas as pd
+
+    utc_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    wall = utc_naive_instant_to_wall_naive(utc_naive, tz_spec)
+    return pd.Timestamp(wall).strftime(fmt)

@@ -1,7 +1,6 @@
 """
 Phase 2 benchmark runner — DAG ablations (single-factor removals).
 """
-from datetime import datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Dict, List, Optional
@@ -16,6 +15,7 @@ from trading_dag.benchmark.suite_common import (
     export_ranked_suite_outputs,
     run_registered_baselines,
 )
+from trading_dag.utils.exchange_time import now_config_wall_strftime
 from trading_dag.utils.output_layout import resolve_benchmark_output_path
 
 
@@ -33,7 +33,7 @@ def run_phase2_benchmarks(
     export_charts: bool = True,
 ) -> Dict[str, Any]:
     """Run phase 2 ablation set; optional baselines use the same wiring as phase 1."""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = now_config_wall_strftime("%Y%m%d_%H%M%S", getattr(config, "timezone", "UTC"))
     out_dir = resolve_benchmark_output_path(config, output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     file_prefix = "benchmark_phase2"
@@ -110,4 +110,5 @@ def run_phase2_benchmarks(
         timestamp,
         export_individual_results,
         export_charts=export_charts,
+        chart_timezone=getattr(config, "timezone", "UTC"),
     )

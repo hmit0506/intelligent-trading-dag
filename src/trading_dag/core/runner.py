@@ -16,6 +16,11 @@ from trading_dag.utils.file_manager import output_file_manager_for_layout
 from trading_dag.utils.constants import Interval
 from trading_dag.utils.config import risk_config_to_metadata
 from trading_dag.utils.backtest_export import export_backtest_trades_and_performance
+from trading_dag.utils.exchange_time import (
+    format_utc_naive_for_display,
+    now_config_wall_strftime,
+    utc_naive_instant_to_wall_naive,
+)
 from trading_dag.utils.output_layout import resolve_output_dirs
 from trading_dag.data.provider import BinanceDataProvider
 import pandas as pd
@@ -324,8 +329,9 @@ class TradingSystemRunner:
     
     def _run_backtest(self) -> Dict[str, Any]:
         """Run backtest mode with enhanced features."""
-        # Generate log file path
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Generate log file path (timestamp in config timezone)
+        tz = getattr(self.config, "timezone", "UTC")
+        timestamp = now_config_wall_strftime("%Y%m%d_%H%M%S", tz)
         log_file = str(self.backtest_output_dir / f"backtest_{timestamp}.log")
 
         backtester = Backtester(
@@ -348,7 +354,7 @@ class TradingSystemRunner:
             initial_positions=getattr(self.config, 'initial_positions', None),  # Support initial positions in backtest
             risk_management=self.config.risk,
             export_output_dir=self.backtest_output_dir,
-            naive_date_timezone=getattr(self.config, "timezone", "UTC"),
+            naive_date_timezone=tz,
         )
         
         print("Starting backtest...")
@@ -374,10 +380,14 @@ class TradingSystemRunner:
         
         # Run agent without future timepoints to match backtest mode behavior
         # This ensures consistent decision-making between live and backtest modes
+        tz = getattr(self.config, "timezone", "UTC")
+        end_wall = utc_naive_instant_to_wall_naive(
+            datetime.now(timezone.utc).replace(tzinfo=None), tz
+        )
         result = agent.run(
             primary_interval=self.config.primary_interval,
             tickers=self.config.signals.tickers,
-            end_date=datetime.now(),
+            end_date=end_wall,
             portfolio=self.portfolio,
             show_reasoning=self.config.show_reasoning,
             model_name=self.config.model.name,
@@ -391,7 +401,9 @@ class TradingSystemRunner:
         
         # Record decision history
         decision_record = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": format_utc_naive_for_display(
+                datetime.now(timezone.utc).replace(tzinfo=None), tz
+            ),
             "decisions": decisions,
             "analyst_signals": analyst_signals,
             "portfolio": self.portfolio.copy(),
@@ -425,9 +437,15 @@ class TradingSystemRunner:
         from trading_dag.data.provider import BinanceDataProvider
         
         init(autoreset=True)
+
+        tz = getattr(self.config, "timezone", "UTC")
+        wall_now = format_utc_naive_for_display(
+            datetime.now(timezone.utc).replace(tzinfo=None), tz
+        )
+        print(f"\n{Fore.WHITE}Decision time ({tz}): {wall_now}{Style.RESET_ALL}")
         
         # Fetch current prices for portfolio valuation
-        data_provider = BinanceDataProvider(naive_timezone=getattr(self.config, "timezone", "UTC"))
+        data_provider = BinanceDataProvider(naive_timezone=tz)
         current_prices = {}
         
         try:
@@ -532,7 +550,9 @@ class TradingSystemRunner:
         if not getattr(self.config, "save_decision_history", True):
             return
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = now_config_wall_strftime(
+            "%Y%m%d_%H%M%S", getattr(self.config, "timezone", "UTC")
+        )
         json_path = self.live_output_dir / f"live_decisions_{timestamp}.json"
         
         with open(json_path, 'w') as f:

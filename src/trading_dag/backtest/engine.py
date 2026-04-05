@@ -16,7 +16,12 @@ from trading_dag.data.provider import BinanceDataProvider
 from trading_dag.utils.config import RiskManagementConfig, risk_config_to_metadata
 from trading_dag.utils.output_layout import OutputLayoutConfig, resolve_output_dirs
 from trading_dag.utils.backtest_export import slugify_experiment_label
-from trading_dag.utils.exchange_time import format_utc_naive_for_display, naive_in_zone_to_utc_naive
+from trading_dag.utils.exchange_time import (
+    format_utc_naive_for_display,
+    naive_in_zone_to_utc_naive,
+    now_config_wall_strftime,
+    utc_naive_instant_to_wall_naive,
+)
 
 
 class Backtester:
@@ -52,8 +57,8 @@ class Backtester:
             ``backtest_portfolio_value_{slug}_{timestamp}.png`` — same slug as
             ``export_backtest_trades_and_performance(..., experiment_label=...)``. Leave unset for
             standalone ``backtest_portfolio_value_{timestamp}.png``.
-        :param naive_date_timezone: IANA timezone for interpreting naive ``start_date`` / ``end_date``
-            (e.g. ``Asia/Hong_Kong``, ``UTC``). Must match ``Config.timezone``.
+        :param naive_date_timezone: Timezone for naive ``start_date`` / ``end_date`` and for all
+            user-facing timestamps (tables, CSV, JSON, charts). Must match ``Config.timezone``.
         :param primary_interval:
         :param intervals:
         :param tickers:
@@ -347,7 +352,7 @@ class Backtester:
         
         print(
             f"Backtest date range: {self.start_date} to {self.end_date} ({date_range}) "
-            f"[naive dates in {self.naive_date_timezone}; klines filtered in UTC]"
+            f"[timezone {self.naive_date_timezone}; bar timestamps below are wall clock in this zone]"
         )
 
         start_utc_naive = naive_in_zone_to_utc_naive(self.start_date, self.naive_date_timezone)
@@ -377,7 +382,7 @@ class Backtester:
                     cache_key = f"{ticker}_{interval.value}"
                     self.prefetched_data[cache_key] = data
                     
-                    # Filter to backtest window (config dates interpreted in naive_date_timezone vs UTC klines)
+                    # Filter to backtest window (config dates in timezone vs exchange kline UTC instants)
                     backtest_data = data[
                         (data["open_time"] >= start_utc_naive)
                         & (data["open_time"] <= end_utc_naive)
@@ -530,7 +535,8 @@ class Backtester:
         # Initialize portfolio values list with initial portfolio value
         initial_value = self.initial_portfolio_value if self.initial_portfolio_value else self.initial_capital
         if len(data_df) > 0:
-            self.portfolio_values = [{"Date": data_df.loc[0, 'open_time'], "Portfolio Value": initial_value}]
+            _d0 = utc_naive_instant_to_wall_naive(data_df.loc[0, "open_time"], self.naive_date_timezone)
+            self.portfolio_values = [{"Date": _d0, "Portfolio Value": initial_value}]
         else:
             self.portfolio_values = []
 
@@ -540,7 +546,7 @@ class Backtester:
             print(
                 f"Backtest will process {len(data_df)} primary-interval bars "
                 f"(first open {self.primary_interval.value}: {_fo}, last open: {_lo}; "
-                f"wall-clock in {self.naive_date_timezone})"
+                f"timezone {self.naive_date_timezone})"
             )
         else:
             print(f"Backtest will process 0 data points (config window {self.start_date} to {self.end_date})")
@@ -604,6 +610,8 @@ class Backtester:
 
             index = row.Index
             current_time = row.close_time
+            wall_time = utc_naive_instant_to_wall_naive(current_time, self.naive_date_timezone)
+            date_display = pd.Timestamp(wall_time).strftime("%Y-%m-%d %H:%M:%S")
             current_prices = {}
             for ticker in self.tickers:
                 price_data = self.klines[ticker]
@@ -664,13 +672,13 @@ class Backtester:
 
             # Track each day's portfolio value in self.portfolio_values
             self.portfolio_values.append(
-                {"Date": current_time, "Portfolio Value": total_value, "Long Exposure": long_exposure,
+                {"Date": wall_time, "Portfolio Value": total_value, "Long Exposure": long_exposure,
                  "Short Exposure": short_exposure, "Gross Exposure": gross_exposure, "Net Exposure": net_exposure,
                  "Long/Short Ratio": long_short_ratio})
 
             # Record detailed trade and portfolio information
             trade_record = {
-                "date": current_time,
+                "date": wall_time,
                 "total_portfolio_value": total_value,
                 "cash_balance": self.portfolio["cash"],
                 "total_long_exposure": long_exposure,
@@ -785,7 +793,7 @@ class Backtester:
                 # Append the agent action to the table rows
                 date_rows.append(
                     format_backtest_row(
-                        date=current_time,
+                        date=date_display,
                         ticker=ticker,
                         action=action,
                         quantity=quantity,
@@ -808,7 +816,7 @@ class Backtester:
             # Add summary row for this day
             date_rows.append(
                 format_backtest_row(
-                    date=current_time,
+                    date=date_display,
                     ticker="",
                     action="",
                     quantity=0,
@@ -907,9 +915,10 @@ class Backtester:
             # Store as a negative percentage
             performance_metrics["max_drawdown"] = min_drawdown * 100
 
-            # Store the date of max drawdown for reference
+            # Store the date of max drawdown (calendar day in display timezone; index is wall naive)
             if min_drawdown < 0:
-                performance_metrics["max_drawdown_date"] = drawdown.idxmin().strftime("%Y-%m-%d")
+                dd_ts = drawdown.idxmin()
+                performance_metrics["max_drawdown_date"] = pd.Timestamp(dd_ts).strftime("%Y-%m-%d")
             else:
                 performance_metrics["max_drawdown_date"] = None
         else:
@@ -943,17 +952,17 @@ class Backtester:
         print(
             f"Total Realized Gains/Losses: {Fore.GREEN if total_realized_gains >= 0 else Fore.RED}${total_realized_gains:,.2f}{Style.RESET_ALL}")
 
-        # Plot the portfolio value over time
+        # Plot the portfolio value over time (index is wall clock in naive_date_timezone)
         plt.figure(figsize=(12, 6))
         plt.plot(performance_df.index, performance_df["Portfolio Value"], color="blue", linewidth=2)
         plt.title("Portfolio Value Over Time", fontsize=14, fontweight='bold')
         plt.ylabel("Portfolio Value ($)", fontsize=12)
-        plt.xlabel("Date", fontsize=12)
+        plt.xlabel(f"Date ({self.naive_date_timezone})", fontsize=12)
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
         
         # Save the plot to file (experiment_label matches export_backtest_trades_and_performance)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = now_config_wall_strftime("%Y%m%d_%H%M%S", self.naive_date_timezone)
         if self._experiment_label:
             slug = slugify_experiment_label(self._experiment_label)
             plot_path = self.output_dir / f"backtest_portfolio_value_{slug}_{timestamp}.png"

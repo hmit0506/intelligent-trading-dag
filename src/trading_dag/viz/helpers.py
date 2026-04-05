@@ -7,11 +7,42 @@ from typing import Any, List, Optional
 
 import pandas as pd
 import streamlit as st
+import yaml
 
 
 def project_root() -> Path:
     """Repository root (``.../src/trading_dag/viz/helpers.py`` → parents[3])."""
     return Path(__file__).resolve().parents[3]
+
+
+def _workspace_chart_timezone(default: str = "UTC") -> str:
+    """``timezone`` from ``config/config.yaml`` (matches standalone CLI backtest)."""
+    cfg_path = project_root() / "config" / "config.yaml"
+    try:
+        if not cfg_path.is_file():
+            return default
+        with cfg_path.open(encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        tz = data.get("timezone", default)
+        return str(tz).strip() if tz is not None else default
+    except Exception:
+        return default
+
+
+def _benchmark_suite_chart_timezone(default: str = "UTC") -> str:
+    """``main.timezone`` from ``config/benchmark.yaml``, else workspace config."""
+    bench_path = project_root() / "config" / "benchmark.yaml"
+    try:
+        if bench_path.is_file():
+            with bench_path.open(encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            main = data.get("main") or {}
+            tz = main.get("timezone")
+            if tz is not None and str(tz).strip():
+                return str(tz).strip()
+    except Exception:
+        pass
+    return _workspace_chart_timezone(default=default)
 
 
 def list_live_decision_jsons(directory: Path) -> List[Path]:
@@ -221,15 +252,20 @@ def _read_equity_df(path: Path) -> Optional[pd.DataFrame]:
     return df
 
 
-def _plotly_equity(df: pd.DataFrame) -> Any:
+def _plotly_equity(df: pd.DataFrame, *, chart_timezone: str = "UTC") -> Any:
     import plotly.express as px
 
+    x_title = f"Date ({chart_timezone})"
     fig = px.line(
         df,
         x="_plot_date",
         y="portfolio_value",
         color="experiment",
-        labels={"_plot_date": "Date", "portfolio_value": "Portfolio value", "experiment": "Run"},
+        labels={
+            "_plot_date": x_title,
+            "portfolio_value": "Portfolio value",
+            "experiment": "Run",
+        },
         template="plotly_white",
         color_discrete_sequence=["#0048f0", "#18a838", "#d82020", "#c6a656", "#7c5cff"],
     )
