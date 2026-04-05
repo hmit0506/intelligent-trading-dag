@@ -60,10 +60,6 @@ graph.png
 # Local documentation (personal reference only; not pushed to GitHub)
 docs/
 
-# Cursor IDE (these files ARE tracked and will be pushed - they're useful for team)
-# .cursorignore - IDE ignore patterns (useful for team)
-# .cursorrules - Code style rules (useful for team)
-
 # Lock files (uv.lock IS tracked - it's important for dependency reproducibility)
 # uv.lock - Dependency lock file (should be committed)
 
