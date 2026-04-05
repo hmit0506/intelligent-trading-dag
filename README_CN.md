@@ -384,6 +384,21 @@ output/
 └── live/        # 实盘决策 JSON
 ```
 
+**Benchmark 套件（Phase 1 / Phase 2）** — 以下均落在配置的 **`{root}/{benchmark_subdir}/`**（默认 `output/benchmark/`）。
+
+- **套件级（每次命令各一套）：** 合并表 `benchmark_phase{1,2}_summary_*.csv`、合并权益 `benchmark_phase{1,2}_equity_*.csv`；若开启 `export_charts`，还有对比图（`*_equity_absolute_*`、`*_equity_normalized_*`、`*_total_return_bar_*`）。
+
+- **每个 DAG 实验**（`FullDAG`、`SingleMACD`、…、`Ablate_*`）：与单机回测同类的三样产物，**文件名里带同一实验名**（slug 会做安全化）：
+  - `backtest_portfolio_value_{实验名}_{时间戳}.png` — 组合净值图  
+  - `backtest_trades_{实验名}_{时间戳}.json` — `trade_log`  
+  - `backtest_performance_{实验名}_{时间戳}.csv` — 净值序列  
+
+  同一次运行里时间戳可能相差约 1 秒；**按 `{实验名}` 段** 配对即可。
+
+- **单机回测**（`trading-dag-backtest`）：在 **`backtest_subdir`** 下为**不带**实验名的传统命名：`backtest_portfolio_value_{时间戳}.png`、`backtest_trades_{时间戳}.json` 等。
+
+- **简单基线**（买入持有、等权再平衡）：权益进入**套件** CSV/图；**不**产生与 DAG 相同格式的 `backtest_trades_*.json`。
+
 **管理产物文件**（默认从 `config/config.yaml` 读取 `output_layout`，可扫描三个子目录，或用 `--subdir` 只扫一个）：
 
 ```bash
@@ -499,8 +514,10 @@ class MyStrategy(BaseNode):
 ## 可视化
 
 ### 投资组合价值图表
-- **生成时机**：回测完成后自动生成
-- **保存位置**：配置的回测子目录下（默认 `output/backtest/`），文件名为 `backtest_portfolio_value_YYYYMMDD_HHMMSS.png`
+- **生成时机**：回测结束后执行 `analyze_performance()` 时写出（单机回测与 benchmark 中每个 DAG 实验均会调用）。
+- **路径与文件名**：
+  - 单机回测：**回测子目录**（默认 `output/backtest/`）— `backtest_portfolio_value_YYYYMMDD_HHMMSS.png`。
+  - Benchmark **每个 DAG 实验**：**benchmark 子目录**（默认 `output/benchmark/`）— `backtest_portfolio_value_{实验名}_YYYYMMDD_HHMMSS.png`（与对应 JSON/CSV 使用同一实验名 slug，见 [输出目录与文件](#输出目录与文件)）。
 - **格式**：高分辨率 PNG（300 DPI）
 - **内容**：投资组合价值随时间变化，包含网格和标签
 

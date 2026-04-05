@@ -62,8 +62,10 @@ def run_dag_backtest_experiment(
         ablation=ablation,
         risk_management=config.risk,
         export_output_dir=bench_dir,
+        experiment_label=variant_name,
     )
     backtester.run_backtest()
+    backtester.analyze_performance()
 
     export_backtest_trades_and_performance(
         backtester,

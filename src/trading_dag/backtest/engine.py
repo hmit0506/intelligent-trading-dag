@@ -15,6 +15,7 @@ from trading_dag.benchmark.ablation import DAGAblationSettings
 from trading_dag.data.provider import BinanceDataProvider
 from trading_dag.utils.config import RiskManagementConfig, risk_config_to_metadata
 from trading_dag.utils.output_layout import OutputLayoutConfig, resolve_output_dirs
+from trading_dag.utils.backtest_export import slugify_experiment_label
 
 
 class Backtester:
@@ -40,9 +41,15 @@ class Backtester:
             ablation: Optional[DAGAblationSettings] = None,
             risk_management: Optional[RiskManagementConfig] = None,
             export_output_dir: Optional[Path] = None,
+            experiment_label: Optional[str] = None,
     ):
         """
         Backtester
+
+        :param experiment_label: If set (e.g. benchmark variant name), portfolio PNG uses
+            ``backtest_portfolio_value_{slug}_{timestamp}.png`` — same slug as
+            ``export_backtest_trades_and_performance(..., experiment_label=...)``. Leave unset for
+            standalone ``backtest_portfolio_value_{timestamp}.png``.
         :param primary_interval:
         :param intervals:
         :param tickers:
@@ -84,6 +91,7 @@ class Backtester:
         else:
             self.output_dir = resolve_output_dirs(Path.cwd(), OutputLayoutConfig()).backtest
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self._experiment_label = (experiment_label or "").strip() or None
         self.binance_data_provider = BinanceDataProvider()
         self.klines: Dict[str, pd.DataFrame] = {}
         self.trade_log: List[Dict[str, Any]] = []  # To store detailed trade and portfolio information
@@ -914,9 +922,13 @@ class Backtester:
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
         
-        # Save the plot to file
+        # Save the plot to file (experiment_label matches export_backtest_trades_and_performance)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        plot_path = self.output_dir / f"backtest_portfolio_value_{timestamp}.png"
+        if self._experiment_label:
+            slug = slugify_experiment_label(self._experiment_label)
+            plot_path = self.output_dir / f"backtest_portfolio_value_{slug}_{timestamp}.png"
+        else:
+            plot_path = self.output_dir / f"backtest_portfolio_value_{timestamp}.png"
         plt.savefig(plot_path, dpi=300, bbox_inches='tight')
         print(f"{Fore.GREEN}Portfolio value chart saved to: {plot_path}{Style.RESET_ALL}")
         

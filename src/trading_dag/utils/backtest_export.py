@@ -16,6 +16,11 @@ def _slugify_label(name: str) -> str:
     return s[:200]
 
 
+def slugify_experiment_label(name: str) -> str:
+    """Safe filename segment shared by portfolio PNG, trades JSON, and performance CSV."""
+    return _slugify_label(name)
+
+
 def export_backtest_trades_and_performance(
     backtester: Any,
     output_dir: Path,
@@ -36,7 +41,7 @@ def export_backtest_trades_and_performance(
     output_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     if experiment_label.strip():
-        slug = _slugify_label(experiment_label)
+        slug = slugify_experiment_label(experiment_label)
         json_path = output_dir / f"backtest_trades_{slug}_{ts}.json"
         csv_stem = f"backtest_performance_{slug}_{ts}.csv"
     else:

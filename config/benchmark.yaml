@@ -4,14 +4,18 @@
 #   come from config.yaml; under main.output_layout set only benchmark_subdir for the suite folder.
 # - "phase1" compares full DAG, single-strategy runs, and baselines.
 # - "phase2" runs DAG ablations (multi-interval, LLM portfolio, risk sizing).
+#
+# Report-oriented preset (FYP): ~14 calendar days, BTC-only, 1h+4h, two single-strategy controls,
+# both simple baselines, charts on. Tweak dates/tickers if you need a shorter run or more realism.
 
 main:
   # Phase runners require backtest even if config/config.yaml uses mode: live for day-to-day.
   mode: backtest
 
   # Keep dates / primary_interval / portfolio / signals / model / risk in lockstep with config.yaml.
-  start_date: 2026-01-01
-  end_date: 2026-01-02
+  # Historical window (Binance klines): adjust if you need a different regime or length.
+  start_date: 2025-11-01
+  end_date: 2025-11-14
 
   primary_interval: 1h
 
@@ -25,8 +29,6 @@ main:
       BTCUSDT:
         long: 0.1
         short: 0.0
-      ETHUSDT:
-        long: 20
 
   show_reasoning: false
   show_agent_graph: true
@@ -55,7 +57,7 @@ main:
 
   signals:
     intervals: ["1h", "4h"]
-    tickers: ["BTCUSDT", "ETHUSDT"]
+    tickers: ["BTCUSDT"]
     strategies: ['MacdStrategy', 'RSIStrategy', 'BollingerStrategy']
 
   model:
@@ -66,27 +68,20 @@ main:
     format: "json"
 
 phase1:
-  # Edit this file before each run (date range under "main", lists below, baselines, etc.).
+  # FullDAG (auto) vs two single-strategy DAGs (omit SingleBollinger to save runtime vs three singles).
+  # Baselines: simple buy-and-hold and periodic equal-weight (same universe as tickers).
 
-  # Baseline toggles.
   run_buy_and_hold: true
   run_equal_weight_rebalance: true
 
-  # DAG comparison experiments only (reference full DAG is always run first; do not list it here).
-  # Use [] for reference plus all single-strategy variants.
+  # Large value = less console spam (does not reduce LLM calls).
+  dag_print_frequency: 999
 
-  # Benchmark DAG output verbosity:
-  # - 1 shows full backtest table output (same style as legacy behavior)
-  # - larger value reduces table refresh frequency
-  dag_print_frequency: 1
-
-  # Keep false to preserve legacy table-style output without tqdm overlay.
-  dag_use_progress_bar: false
+  dag_use_progress_bar: true
 
   # Names: SingleMACD, SingleRSI, SingleBollinger
-  include_dag_experiments: ["SingleMACD", "SingleRSI", "SingleBollinger"]
+  include_dag_experiments: ["SingleMACD", "SingleRSI"]
 
-  # Valid baseline names: BuyAndHold, EqualWeightRebalance
   include_baseline_experiments: []
 
   # Per-experiment summary/equity CSV (in addition to combined suite files and charts).
@@ -100,19 +95,16 @@ phase1:
   rebalance_every_bars: 24
 
 phase2:
-  # List ablation experiments only; reference full DAG is always run first (do not list FullDAG).
-  # Use [] for reference plus all Ablate_* runs.
+  # FullDAG (auto) vs all registered ablations (empty list = Ablate_MultiInterval, LLMPortfolio, RiskSizing).
+  # Set include_ablation_experiments: ["Ablate_MultiInterval"] (etc.) for a faster partial suite.
 
-  # DAG ablation run controls (see phase2_registry).
-  dag_print_frequency: 1
-  dag_use_progress_bar: false
+  dag_print_frequency: 999
+  dag_use_progress_bar: true
 
-  # Optional baselines (default off; same as phase1 simulators).
   run_buy_and_hold: false
   run_equal_weight_rebalance: false
   rebalance_every_bars: 24
 
-  # Example: ["Ablate_MultiInterval"] runs reference DAG + that ablation only.
   include_ablation_experiments: []
 
   include_baseline_experiments: []

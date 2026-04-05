@@ -414,6 +414,21 @@ output/
 └── live/        # live decision JSON
 ```
 
+**Benchmark suite (Phase 1 / Phase 2)** — everything below uses the configured **`{root}/{benchmark_subdir}/`** (default `output/benchmark/`).
+
+- **Suite-level (once per CLI run):** combined `benchmark_phase{1,2}_summary_*.csv`, `benchmark_phase{1,2}_equity_*.csv`, and optional comparison figures when `export_charts` is true (`*_equity_absolute_*`, `*_equity_normalized_*`, `*_total_return_bar_*`).
+
+- **Per DAG experiment** (`FullDAG`, `SingleMACD`, …, `Ablate_*`): the same **experiment name** appears in all three standalone-style artifacts (slugs are normalized for filenames):
+  - `backtest_portfolio_value_{experiment}_{timestamp}.png` — portfolio value chart
+  - `backtest_trades_{experiment}_{timestamp}.json` — trade log (`trade_log`)
+  - `backtest_performance_{experiment}_{timestamp}.csv` — portfolio value series  
+
+  Timestamps may differ by a second between files from the same run; match files by the **`{experiment}`** segment.
+
+- **Standalone backtest** (`trading-dag-backtest`): under **`backtest_subdir`**, legacy names **without** an experiment slug: `backtest_portfolio_value_{timestamp}.png`, `backtest_trades_{timestamp}.json`, `backtest_performance_{timestamp}.csv`.
+
+- **Simple baselines** (buy-and-hold, equal-weight rebalance): curves feed the **suite** CSVs and charts; they do **not** emit `backtest_trades_*.json` in the DAG format above.
+
 **Manage output files** (reads `output_layout` from `config/config.yaml` by default; scans all three subfolders, or one with `--subdir`):
 
 ```bash
@@ -529,8 +544,10 @@ The backtester provides:
 ## Visualizations
 
 ### Portfolio Value Chart
-- **When**: Generated automatically after backtest completion
-- **Location**: Saved under the configured backtest folder (default `output/backtest/`) as `backtest_portfolio_value_YYYYMMDD_HHMMSS.png`
+- **When**: Written when `analyze_performance()` runs after a backtest (standalone runner and benchmark DAG experiments).
+- **Location / filename**:
+  - Standalone backtest: **`backtest_subdir`** (default `output/backtest/`) — `backtest_portfolio_value_YYYYMMDD_HHMMSS.png`.
+  - Benchmark **per DAG experiment**: **`benchmark_subdir`** (default `output/benchmark/`) — `backtest_portfolio_value_{experiment}_YYYYMMDD_HHMMSS.png` (same `{experiment}` slug as the matching JSON/CSV; see [Output layout](#output-layout-and-files)).
 - **Format**: High-resolution PNG (300 DPI)
 - **Content**: Portfolio value over time with grid and labels
 

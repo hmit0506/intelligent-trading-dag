@@ -1,9 +1,9 @@
 # Configuration File
 mode: live  # Trading mode: "backtest" or "live"
 
-# Date range for backtesting (only used in backtest mode)
-start_date: 2026-01-01
-end_date: 2026-01-02
+# Date range for backtesting (only used in backtest mode). Kept in sync with config/benchmark.yaml main.
+start_date: 2025-11-01
+end_date: 2025-11-14
 
 # Primary time interval for decision making
 # Note: This interval will be automatically added to signals.intervals if not already present
@@ -28,8 +28,6 @@ initial_positions:
     BTCUSDT:
       long: 0.1  # Long position quantity
       short: 0.0  # Short position quantity
-    ETHUSDT:
-      long: 20
 
 # Display options
 show_reasoning: false  # Show LLM reasoning process
@@ -69,7 +67,7 @@ risk:
 signals:
   # Time intervals to analyze (primary_interval will be automatically included if not listed)
   intervals: ["1h", "4h"]
-  tickers: ["BTCUSDT", "ETHUSDT"]  # Trading pairs to analyze
+  tickers: ["BTCUSDT"]  # Trading pairs (match benchmark.yaml main for comparable runs)
   strategies: ['MacdStrategy', 'RSIStrategy', 'BollingerStrategy']  # Trading strategies to use
 
 # LLM model configuration
