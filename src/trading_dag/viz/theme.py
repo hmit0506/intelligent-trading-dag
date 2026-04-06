@@ -63,11 +63,31 @@ def inject_theme_css() -> None:
             }}
             h1, h2, h3 {{ color: var(--viz-text) !important; font-weight: 600; letter-spacing: -0.02em; }}
             [data-testid="stMarkdownContainer"] p {{ color: var(--viz-muted); }}
+            [data-testid="stMarkdownContainer"] li,
+            [data-testid="stMarkdownContainer"] span,
+            [data-testid="stMarkdownContainer"] label {{
+                color: var(--viz-text) !important;
+            }}
             .stRadio label, .stCheckbox label, .stSelectbox label, .stTextInput label,
             .stMultiSelect label, .stDateInput label {{ color: var(--viz-text) !important; }}
+            [data-baseweb="select"] *,
+            [data-baseweb="popover"] *,
+            [role="listbox"] *,
+            [role="option"] *,
+            .stSelectbox div,
+            .stMultiSelect div {{
+                color: var(--viz-text) !important;
+            }}
             [data-testid="stMetricValue"] {{ color: var(--viz-accent) !important; }}
             [data-testid="stMarkdownContainer"] a {{ color: var(--viz-accent); }}
-            div[data-baseweb="tab-list"] button {{ font-family: var(--viz-font-ui); }}
+            div[data-baseweb="tab-list"] button {{
+                font-family: var(--viz-font-ui);
+                color: var(--viz-text) !important;
+            }}
+            div[data-baseweb="tab-list"] button[aria-selected="true"] {{
+                color: var(--viz-accent) !important;
+                font-weight: 600;
+            }}
             .stButton > button {{
                 background-color: var(--viz-button-bg) !important;
                 color: var(--viz-button-text) !important;
@@ -150,6 +170,9 @@ def inject_theme_css() -> None:
                 background: var(--viz-surface-card);
                 padding: 0.35rem;
             }}
+            [data-testid="stDataFrame"] * {{
+                color: var(--viz-text) !important;
+            }}
             [data-testid="stPlotlyChart"] {{
                 border: 1px solid var(--viz-surface-alt);
                 border-radius: var(--viz-radius);
@@ -161,6 +184,102 @@ def inject_theme_css() -> None:
                 border-radius: var(--viz-radius);
                 background: var(--viz-surface-card);
                 padding: 0.5rem;
+            }}
+            [data-testid="stImage"] figcaption,
+            [data-testid="stImage"] [data-testid="stCaption"],
+            [data-testid="stImage"] p {{
+                color: var(--viz-text) !important;
+            }}
+            /* Code/JSON: force high-contrast light panel + dark text. */
+            [data-testid="stCodeBlock"],
+            [data-testid="stCode"],
+            [data-testid="stJson"] {{
+                background: var(--viz-surface-card) !important;
+                border: 1px solid var(--viz-surface-alt) !important;
+                border-radius: var(--viz-radius) !important;
+            }}
+            [data-testid="stCodeBlock"] pre,
+            [data-testid="stCode"] pre {{
+                background: var(--viz-surface-card) !important;
+                color: var(--viz-text) !important;
+            }}
+            [data-testid="stCodeBlock"] code,
+            [data-testid="stCode"] code,
+            [data-testid="stCodeBlock"] span,
+            [data-testid="stCode"] span,
+            [data-testid="stJson"] span,
+            [data-testid="stJson"] code,
+            [data-testid="stJson"] pre {{
+                color: var(--viz-text) !important;
+                -webkit-text-fill-color: var(--viz-text) !important;
+            }}
+            [data-testid="stJson"] *,
+            [data-testid="stText"] *,
+            [data-testid="stAlert"] *,
+            [data-testid="stExpander"] * {{
+                color: var(--viz-text) !important;
+            }}
+            [data-testid="stCaption"],
+            [data-testid="stCaption"] *,
+            .stCaption,
+            .stCaption * {{
+                color: var(--viz-muted) !important;
+            }}
+            [data-testid="stFileUploader"] *,
+            [data-testid="stTextInput"] *,
+            [data-testid="stTextArea"] *,
+            [data-testid="stNumberInput"] *,
+            [data-testid="stSlider"] * {{
+                color: var(--viz-text) !important;
+            }}
+            /* Select/input controls: avoid dark bg + dark text combos. */
+            [data-baseweb="select"] > div,
+            [data-baseweb="input"] > div,
+            [data-baseweb="textarea"] > div {{
+                background: var(--viz-surface-card) !important;
+                border-color: var(--viz-surface-alt) !important;
+            }}
+            [data-baseweb="select"] input,
+            [data-baseweb="input"] input,
+            [data-baseweb="textarea"] textarea,
+            [data-baseweb="select"] [role="combobox"],
+            [data-baseweb="select"] [role="combobox"] * {{
+                color: var(--viz-text) !important;
+                -webkit-text-fill-color: var(--viz-text) !important;
+            }}
+            /* NumberInput stepper (+/-): keep strong foreground contrast. */
+            [data-testid="stNumberInput"] button {{
+                background-color: var(--viz-button-bg) !important;
+                color: var(--viz-button-text) !important;
+                border-color: var(--viz-button-border) !important;
+            }}
+            [data-testid="stNumberInput"] button:hover {{
+                background-color: var(--viz-button-bg-hover) !important;
+            }}
+            [data-testid="stNumberInput"] button *,
+            [data-testid="stNumberInput"] button span,
+            [data-testid="stNumberInput"] button div {{
+                color: var(--viz-button-text) !important;
+                -webkit-text-fill-color: var(--viz-button-text) !important;
+            }}
+            [data-testid="stNumberInput"] button svg,
+            [data-testid="stNumberInput"] button svg path {{
+                fill: var(--viz-button-text) !important;
+                stroke: var(--viz-button-text) !important;
+            }}
+            /* Plotly labels/ticks: force dark text on light chart background. */
+            [data-testid="stPlotlyChart"] svg text,
+            [data-testid="stPlotlyChart"] .xtick text,
+            [data-testid="stPlotlyChart"] .ytick text,
+            [data-testid="stPlotlyChart"] .gtitle,
+            [data-testid="stPlotlyChart"] .legendtext,
+            [data-testid="stPlotlyChart"] .infolayer text {{
+                fill: var(--viz-text) !important;
+                color: var(--viz-text) !important;
+            }}
+            input, textarea, [contenteditable="true"] {{
+                color: var(--viz-text) !important;
+                -webkit-text-fill-color: var(--viz-text) !important;
             }}
             /*
              * Sidebar: Streamlit themes often set light-on-light (white/gray text on white).
