@@ -2,6 +2,7 @@
 Main entry point for live trading mode and backtest mode.
 Uses unified TradingSystemRunner for consistent interface.
 """
+import argparse
 from dotenv import load_dotenv
 from trading_dag.utils.config import load_config
 from trading_dag.core.runner import TradingSystemRunner
@@ -11,13 +12,29 @@ load_dotenv()
 DEFAULT_CONFIG = "config/config.yaml"
 
 
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run trading system (live/backtest).")
+    parser.add_argument("--config", default=DEFAULT_CONFIG, help="Path to config YAML.")
+    parser.add_argument(
+        "--mode-override",
+        choices=["backtest", "live"],
+        default=None,
+        help="Override mode at runtime without editing the YAML file.",
+    )
+    return parser
+
+
 def main():
     """Run the trading system."""
-    config_path = DEFAULT_CONFIG
+    args = _build_parser().parse_args()
+    config_path = args.config
     try:
         config = load_config(config_path)
     except FileNotFoundError:
         config = load_config("config.yaml")
+
+    if args.mode_override:
+        config.mode = args.mode_override
 
     runner = TradingSystemRunner(config)
     results = runner.run()

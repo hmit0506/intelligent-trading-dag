@@ -37,6 +37,7 @@ dependencies = [
     "langchain-ollama>=0.3.3",
     "plotly>=5.22.0",
     "streamlit>=1.39.0",
+    "ruamel-yaml>=0.19.1",
 ]
 
 [project.scripts]

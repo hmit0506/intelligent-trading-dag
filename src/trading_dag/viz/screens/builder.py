@@ -1,43 +1,611 @@
-"""Fusion Builder screen."""
+"""Benchmark builder screen with benchmark config editing."""
+from __future__ import annotations
+
+import os
+import re
+import signal
+import subprocess
+import time
+from io import StringIO
+from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 import streamlit as st
+from ruamel.yaml import YAML
 
 from trading_dag.viz.helpers import _page_header
 
+BENCHMARK_CONFIG_REL = Path("config/benchmark.yaml")
+DEFAULT_INTERVAL_OPTIONS = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
+DEFAULT_PROVIDERS = ["openai", "groq", "anthropic", "google", "ollama", "openrouter"]
+DEFAULT_STRATEGIES = ["MacdStrategy", "RSIStrategy", "BollingerStrategy"]
+DEFAULT_PHASE1_EXPERIMENTS = ["SingleMACD", "SingleRSI", "SingleBollinger"]
+DEFAULT_PHASE2_EXPERIMENTS = [
+    "Ablate_MultiInterval",
+    "Ablate_LLMPortfolio",
+    "Ablate_RiskSizing",
+]
+DEFAULT_RESPONSE_FORMATS = ["json"]
+YAML_RW = YAML(typ="rt")
+YAML_RW.preserve_quotes = True
+YAML_RW.indent(mapping=2, sequence=4, offset=2)
+RUN_STATE_KEY = "viz_benchmark_run_state"
+RUN_LOG_LINES = 120
+RUN_LOG_AUTO_REFRESH_KEY = "benchmark_run_log_auto_refresh"
+RUN_NOTICE_KEY = "benchmark_run_notice"
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+TRACEBACK_BLOCK_RE = re.compile(r"Traceback \(most recent call last\):[\s\S]*?(?:KeyboardInterrupt|$)")
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _parse_date(value: Any) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.strptime(value.strip(), "%Y-%m-%d").date()
+        except ValueError:
+            return date.today()
+    return date.today()
+
+
+def _comma_split(text: str) -> list[str]:
+    return [item.strip() for item in text.split(",") if item.strip()]
+
+
+def _load_yaml(path: Path) -> tuple[dict[str, Any] | None, str | None]:
+    if not path.is_file():
+        return None, f"Config not found: {path}"
+    try:
+        with path.open(encoding="utf-8") as f:
+            data = YAML_RW.load(f) or {}
+    except Exception as exc:
+        return None, str(exc)
+    if not isinstance(data, dict):
+        return None, "benchmark.yaml root must be a mapping."
+    return data, None
+
+
+def _write_yaml(path: Path, data: dict[str, Any]) -> str | None:
+    try:
+        with path.open("w", encoding="utf-8") as f:
+            YAML_RW.dump(data, f)
+        return None
+    except Exception as exc:
+        return str(exc)
+
+
+def _dump_yaml_text(data: Any) -> str:
+    buf = StringIO()
+    YAML_RW.dump(data, buf)
+    return buf.getvalue()
+
+
+def _is_pid_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    # On macOS, zombie PIDs can still pass kill(pid, 0); filter them out.
+    try:
+        res = subprocess.run(
+            ["ps", "-o", "stat=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=1.0,
+            check=False,
+        )
+        stat = (res.stdout or "").strip()
+        if not stat:
+            return False
+        if stat.startswith("Z"):
+            return False
+    except Exception:
+        pass
+    return True
+
+
+def _read_log_tail(log_path: Path, max_lines: int = RUN_LOG_LINES) -> str:
+    if not log_path.is_file():
+        return "(log file not created yet)"
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception as exc:
+        return f"(failed to read log: {exc})"
+    if not lines:
+        return "(no output yet)"
+    return "\n".join(lines[-max_lines:])
+
+
+def _clean_terminal_output(text: str) -> str:
+    """Strip ANSI color/control codes for readable web display."""
+    cleaned = ANSI_ESCAPE_RE.sub("", text)
+    return cleaned.replace("\r", "")
+
+
+def _clean_interruption_noise(text: str) -> str:
+    return TRACEBACK_BLOCK_RE.sub("[interrupted traceback omitted]\n", text)
+
+
+def _list_streamlit_run_logs(log_dir: Path, pattern: str = "*_streamlit_run_*.log") -> list[Path]:
+    log_dir = log_dir.resolve()
+    if not log_dir.is_dir():
+        return []
+    return sorted(
+        log_dir.glob(pattern),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+
+
+def _start_benchmark_run(root: Path, phase: str, cfg_path: Path) -> tuple[dict[str, Any] | None, str | None]:
+    cli_module = "trading_dag.cli.benchmark_phase1" if phase == "phase1" else "trading_dag.cli.benchmark_phase2"
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = (root / "output" / "benchmark" / f"{phase}_streamlit_run_{run_id}.log").resolve()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = ["uv", "run", "python", "-m", cli_module, "--config", str(cfg_path)]
+    try:
+        with log_path.open("w", encoding="utf-8") as log_file:
+            process = subprocess.Popen(
+                cmd,
+                cwd=str(root),
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+    except Exception as exc:
+        return None, str(exc)
+    state = {
+        "pid": process.pid,
+        "pgid": os.getpgid(process.pid),
+        "phase": phase,
+        "cmd": " ".join(cmd),
+        "log_path": str(log_path),
+        "started_at": time.time(),
+        "stop_requested": False,
+        "notified_finished": False,
+        "terminal_status": "running",
+    }
+    return state, None
+
+
+def _stop_benchmark_run(state: dict[str, Any]) -> str | None:
+    try:
+        pid = int(state.get("pid", -1))
+    except (TypeError, ValueError):
+        return "Invalid PID."
+    if pid <= 0:
+        return "Invalid PID."
+    try:
+        pgid = int(state.get("pgid", pid))
+    except (TypeError, ValueError):
+        pgid = pid
+    # Escalating stop for process group: SIGINT -> SIGTERM -> SIGKILL.
+    def _send_group(sig: int) -> None:
+        try:
+            os.killpg(pgid, sig)
+        except OSError:
+            os.kill(pid, sig)
+
+    for sig, wait_s in ((signal.SIGINT, 1.0), (signal.SIGTERM, 1.5), (signal.SIGKILL, 1.0)):
+        try:
+            _send_group(sig)
+        except OSError:
+            pass
+        # Extra fallback: kill direct children of the launcher process.
+        try:
+            subprocess.run(
+                ["pkill", f"-{sig.value if hasattr(sig, 'value') else int(sig)}", "-P", str(pid)],
+                capture_output=True,
+                text=True,
+                timeout=1.0,
+                check=False,
+            )
+        except Exception:
+            pass
+        deadline = time.time() + wait_s
+        while time.time() < deadline:
+            if not _is_pid_running(pid):
+                return None
+            time.sleep(0.1)
+    if _is_pid_running(pid):
+        return "Process is still running after SIGKILL."
+    return None
+
 
 def render(root: Path) -> None:
-    _ = root
     _page_header(
-        "Fusion Builder",
-        "Configure run parameters",
-        "Match the prototype builder: dates, interval, tickers, and strategies. "
-        "Benchmark execution still runs via the CLI; this block builds the **same intent** for documentation "
-        "and copy-paste commands.",
+        "Benchmark Builder",
+        "Edit benchmark settings",
+        "Load `config/benchmark.yaml`, tune suite parameters, and save back to the same file.",
     )
-    c1, c2 = st.columns(2)
-    with c1:
-        st.date_input("Start date", value=None, key="b_start")
-        st.date_input("End date", value=None, key="b_end")
-        st.selectbox("Interval", ["1 hour", "4 hours", "1 day"], index=0, key="b_interval")
-    with c2:
-        st.text_input("Initial cash (USD)", value="100000", key="b_cash")
-        st.text_input("Tickers (comma-separated)", value="BTCUSDT", key="b_tickers")
-        st.text_input("Margin requirement", value="", key="b_margin", placeholder="Optional")
+    notice = st.session_state.pop(RUN_NOTICE_KEY, None)
+    if isinstance(notice, str) and notice.strip():
+        st.warning(notice)
+        st.toast(notice, icon="🛑")
+
+    cfg_path = (root / BENCHMARK_CONFIG_REL).resolve()
+    col_meta_l, col_meta_r = st.columns([3, 2])
+    with col_meta_l:
+        st.caption(f"Config file: `{cfg_path}`")
+    with col_meta_r:
+        reload_clicked = st.button("Reload from file", use_container_width=True)
+
+    cfg, load_err = _load_yaml(cfg_path)
+    if load_err:
+        st.error(f"Could not load benchmark config: {load_err}")
+        return
+    assert cfg is not None
+
+    if reload_clicked:
+        st.rerun()
+
+    main_cfg = cfg.setdefault("main", {})
+    phase1_cfg = cfg.setdefault("phase1", {})
+    phase2_cfg = cfg.setdefault("phase2", {})
+    if not isinstance(main_cfg, dict) or not isinstance(phase1_cfg, dict) or not isinstance(phase2_cfg, dict):
+        st.error("`main`, `phase1`, and `phase2` must be mappings in benchmark.yaml.")
+        return
+
+    model_cfg = main_cfg.setdefault("model", {})
+    signals_cfg = main_cfg.setdefault("signals", {})
+    risk_cfg = main_cfg.setdefault("risk", {})
+    output_layout_cfg = main_cfg.setdefault("output_layout", {})
+
     st.markdown(
-        '<div class="viz-panel-title"><span></span><span>Strategies</span></div>',
+        '<div class="viz-panel-title"><span></span><span>Main (shared run settings)</span></div>',
         unsafe_allow_html=True,
     )
-    st.multiselect(
-        "Drag-and-drop is not available in Streamlit; select nodes to include",
-        ["RSI", "MACD", "Bollinger", "Mean reversion"],
-        default=["RSI", "MACD"],
-        key="b_strat",
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        timezone = st.text_input("Timezone", value=str(main_cfg.get("timezone", "UTC")).strip())
+        start_d = st.date_input("Start date", value=_parse_date(main_cfg.get("start_date")))
+        end_d = st.date_input("End date", value=_parse_date(main_cfg.get("end_date")))
+    with c2:
+        interval_options = list(dict.fromkeys(DEFAULT_INTERVAL_OPTIONS + [str(main_cfg.get("primary_interval", "1h"))]))
+        primary_interval = st.selectbox(
+            "Primary interval",
+            interval_options,
+            index=max(0, interval_options.index(str(main_cfg.get("primary_interval", "1h")))),
+        )
+        initial_cash = st.number_input(
+            "Initial cash",
+            min_value=0.0,
+            step=1000.0,
+            value=float(main_cfg.get("initial_positions", {}).get("cash", 100000.0)),
+        )
+        margin_requirement = st.number_input(
+            "Margin requirement",
+            min_value=0.0,
+            step=0.01,
+            value=float(main_cfg.get("margin_requirement", 0.0)),
+        )
+        sync_from_exchange = st.checkbox(
+            "Sync from exchange",
+            value=bool(main_cfg.get("sync_from_exchange", False)),
+            help="Mainly for live/account sync; usually false for benchmark backtests.",
+        )
+        print_frequency = st.number_input(
+            "Print frequency",
+            min_value=1,
+            step=1,
+            value=int(main_cfg.get("print_frequency", 1)),
+        )
+    with c3:
+        benchmark_subdir = st.text_input(
+            "Benchmark subdir",
+            value=str(output_layout_cfg.get("benchmark_subdir", "benchmark")),
+        )
+        show_reasoning = st.checkbox("Show LLM reasoning", value=bool(main_cfg.get("show_reasoning", False)))
+        show_graph = st.checkbox("Save workflow graph", value=bool(main_cfg.get("show_agent_graph", True)))
+        use_progress_bar = st.checkbox(
+            "Use progress bar",
+            value=bool(main_cfg.get("use_progress_bar", True)),
+        )
+        enable_logging = st.checkbox(
+            "Enable logging",
+            value=bool(main_cfg.get("enable_logging", True)),
+        )
+        save_history = st.checkbox(
+            "Save decision history",
+            value=bool(main_cfg.get("save_decision_history", True)),
+            help="Mainly used by live mode; kept here for config parity.",
+        )
+        auto_cleanup_files = st.checkbox(
+            "Auto cleanup files",
+            value=bool(main_cfg.get("auto_cleanup_files", False)),
+        )
+        file_retention_days = st.number_input(
+            "File retention days",
+            min_value=1,
+            step=1,
+            value=int(main_cfg.get("file_retention_days", 30)),
+        )
+        file_keep_latest = st.number_input(
+            "File keep latest",
+            min_value=1,
+            step=1,
+            value=int(main_cfg.get("file_keep_latest", 10)),
+        )
+
+    positions_yaml_default = _dump_yaml_text(main_cfg.get("initial_positions", {}).get("positions", {}))
+    with st.expander("Initial positions map (advanced)", expanded=False):
+        positions_yaml = st.text_area(
+            "main.initial_positions.positions (YAML mapping)",
+            value=positions_yaml_default if isinstance(positions_yaml_default, str) else "{}\n",
+            height=120,
+            key="benchmark_initial_positions_yaml",
+        )
+
+    st.markdown(
+        '<div class="viz-panel-title"><span></span><span>Signals & model</span></div>',
+        unsafe_allow_html=True,
     )
-    st.text_input("Model", value="DeepSeek", key="b_model")
-    st.checkbox("Show LLM reasoning process", value=True, key="b_reason")
-    st.checkbox("Generate and save workflow graph", value=False, key="b_graph")
-    st.checkbox("Save decision history to JSON file", value=True, key="b_hist")
+    s1, s2 = st.columns(2)
+    with s1:
+        intervals_default = [str(x) for x in _as_list(signals_cfg.get("intervals"))]
+        intervals_options = list(dict.fromkeys(DEFAULT_INTERVAL_OPTIONS + intervals_default))
+        intervals = st.multiselect(
+            "Signal intervals",
+            intervals_options,
+            default=intervals_default,
+        )
+        tickers = st.text_input(
+            "Tickers (comma-separated)",
+            value=", ".join(str(x) for x in _as_list(signals_cfg.get("tickers"))),
+        )
+        strategies_options = list(
+            dict.fromkeys(DEFAULT_STRATEGIES + [str(x) for x in _as_list(signals_cfg.get("strategies"))])
+        )
+        strategies = st.multiselect(
+            "Strategies",
+            strategies_options,
+            default=[str(x) for x in _as_list(signals_cfg.get("strategies"))],
+        )
+    with s2:
+        provider_options = list(dict.fromkeys(DEFAULT_PROVIDERS + [str(model_cfg.get("provider", "openai"))]))
+        model_provider = st.selectbox(
+            "Model provider",
+            provider_options,
+            index=max(0, provider_options.index(str(model_cfg.get("provider", "openai")))),
+        )
+        model_name = st.text_input("Model name", value=str(model_cfg.get("name", "deepseek-chat")))
+        model_base_url = st.text_input("Model base_url", value=str(model_cfg.get("base_url", "") or ""))
+        model_temperature = st.number_input(
+            "Model temperature",
+            min_value=0.0,
+            max_value=2.0,
+            step=0.1,
+            value=float(model_cfg.get("temperature", 0.0)),
+        )
+        format_options = list(dict.fromkeys(DEFAULT_RESPONSE_FORMATS + [str(model_cfg.get("format", "json"))]))
+        model_format = st.selectbox(
+            "Response format",
+            format_options,
+            index=max(0, format_options.index(str(model_cfg.get("format", "json")))),
+        )
+
+    st.markdown(
+        '<div class="viz-panel-title"><span></span><span>Risk sizing</span></div>',
+        unsafe_allow_html=True,
+    )
+    r1, r2, r3 = st.columns(3)
+    with r1:
+        risk_per_trade_pct = st.number_input(
+            "Risk per trade %",
+            min_value=0.0,
+            max_value=1.0,
+            step=0.01,
+            value=float(risk_cfg.get("risk_per_trade_pct", 0.02)),
+        )
+        stop_loss_pct = st.number_input(
+            "Stop loss %",
+            min_value=0.0,
+            max_value=1.0,
+            step=0.01,
+            value=float(risk_cfg.get("stop_loss_pct", 0.05)),
+        )
+        max_notional_fraction = st.number_input(
+            "Max notional fraction per ticker",
+            min_value=0.0,
+            max_value=1.0,
+            step=0.05,
+            value=float(risk_cfg.get("max_notional_fraction_per_ticker", 1.0)),
+        )
+    with r2:
+        min_quantity = st.number_input(
+            "Min quantity",
+            min_value=0.0,
+            step=0.001,
+            value=float(risk_cfg.get("min_quantity", 0.001)),
+        )
+        quantity_decimals = st.number_input(
+            "Quantity decimals",
+            min_value=0,
+            max_value=10,
+            step=1,
+            value=int(risk_cfg.get("quantity_decimals", 3)),
+        )
+        stop_distance_mode = st.selectbox(
+            "Stop distance mode",
+            ["entry_or_spot_pct", "atr"],
+            index=0 if str(risk_cfg.get("stop_distance_mode", "entry_or_spot_pct")) == "entry_or_spot_pct" else 1,
+        )
+    with r3:
+        atr_period = st.number_input(
+            "ATR period",
+            min_value=1,
+            max_value=500,
+            step=1,
+            value=int(risk_cfg.get("atr_period", 14)),
+        )
+        atr_multiplier = st.number_input(
+            "ATR multiplier",
+            min_value=0.1,
+            max_value=10.0,
+            step=0.1,
+            value=float(risk_cfg.get("atr_multiplier", 1.0)),
+        )
+
+    st.markdown(
+        '<div class="viz-panel-title"><span></span><span>Phase 1 / Phase 2 suite options</span></div>',
+        unsafe_allow_html=True,
+    )
+    p1, p2 = st.columns(2)
+    with p1:
+        phase1_print_frequency = st.number_input(
+            "Phase1 print frequency",
+            min_value=1,
+            step=1,
+            value=int(phase1_cfg.get("dag_print_frequency", 1)),
+        )
+        phase1_progress = st.checkbox(
+            "Phase1 use progress bar",
+            value=bool(phase1_cfg.get("dag_use_progress_bar", False)),
+        )
+        phase1_exports = st.checkbox(
+            "Phase1 export individual results",
+            value=bool(phase1_cfg.get("export_individual_results", True)),
+        )
+        phase1_charts = st.checkbox(
+            "Phase1 export charts",
+            value=bool(phase1_cfg.get("export_charts", True)),
+        )
+        phase1_experiments = st.multiselect(
+            "Phase1 experiments",
+            DEFAULT_PHASE1_EXPERIMENTS,
+            default=[x for x in _as_list(phase1_cfg.get("include_dag_experiments")) if isinstance(x, str)],
+        )
+    with p2:
+        phase2_print_frequency = st.number_input(
+            "Phase2 print frequency",
+            min_value=1,
+            step=1,
+            value=int(phase2_cfg.get("dag_print_frequency", 999)),
+        )
+        phase2_progress = st.checkbox(
+            "Phase2 use progress bar",
+            value=bool(phase2_cfg.get("dag_use_progress_bar", True)),
+        )
+        phase2_exports = st.checkbox(
+            "Phase2 export individual results",
+            value=bool(phase2_cfg.get("export_individual_results", True)),
+        )
+        phase2_charts = st.checkbox(
+            "Phase2 export charts",
+            value=bool(phase2_cfg.get("export_charts", True)),
+        )
+        phase2_experiments = st.multiselect(
+            "Phase2 experiments",
+            DEFAULT_PHASE2_EXPERIMENTS,
+            default=[x for x in _as_list(phase2_cfg.get("include_ablation_experiments")) if isinstance(x, str)],
+            help="Empty means run all registered ablations (with FullDAG auto-prepended).",
+        )
+
+    st.markdown(
+        '<div class="viz-panel-title"><span></span><span>Save</span></div>',
+        unsafe_allow_html=True,
+    )
+    st.caption(f"Save target: `{cfg_path}`")
+    save_clicked = st.button("Save benchmark.yaml", type="primary", use_container_width=True)
+    if save_clicked:
+        errors: list[str] = []
+        if end_d < start_d:
+            errors.append("End date must be on or after start date.")
+        ticker_list = _comma_split(tickers)
+        if not ticker_list:
+            errors.append("At least one ticker is required.")
+        if not intervals:
+            errors.append("At least one signal interval is required.")
+        if not strategies:
+            errors.append("At least one strategy is required.")
+        if not benchmark_subdir.strip():
+            errors.append("Benchmark subdir cannot be empty.")
+
+        if errors:
+            for err in errors:
+                st.error(err)
+        else:
+            positions_mapping: dict[str, Any] = {}
+            try:
+                parsed_positions = YAML_RW.load(positions_yaml) if positions_yaml.strip() else {}
+                if parsed_positions is None:
+                    parsed_positions = {}
+                if not isinstance(parsed_positions, dict):
+                    raise ValueError("initial_positions.positions must be a mapping.")
+                positions_mapping = parsed_positions
+            except Exception as exc:
+                st.error(f"Invalid initial_positions.positions YAML: {exc}")
+                return
+
+            main_cfg["mode"] = "backtest"
+            main_cfg["timezone"] = timezone.strip() or "UTC"
+            main_cfg["start_date"] = start_d.isoformat()
+            main_cfg["end_date"] = end_d.isoformat()
+            main_cfg["primary_interval"] = primary_interval
+            main_cfg["margin_requirement"] = float(margin_requirement)
+            main_cfg["sync_from_exchange"] = bool(sync_from_exchange)
+            main_cfg["show_reasoning"] = bool(show_reasoning)
+            main_cfg["show_agent_graph"] = bool(show_graph)
+            main_cfg["use_progress_bar"] = bool(use_progress_bar)
+            main_cfg["enable_logging"] = bool(enable_logging)
+            main_cfg["save_decision_history"] = bool(save_history)
+            main_cfg["print_frequency"] = int(print_frequency)
+            main_cfg["auto_cleanup_files"] = bool(auto_cleanup_files)
+            main_cfg["file_retention_days"] = int(file_retention_days)
+            main_cfg["file_keep_latest"] = int(file_keep_latest)
+            main_cfg["initial_positions"] = main_cfg.get("initial_positions", {}) if isinstance(
+                main_cfg.get("initial_positions"), dict
+            ) else {}
+            main_cfg["initial_positions"]["cash"] = float(initial_cash)
+            main_cfg["initial_positions"]["positions"] = positions_mapping
+
+            output_layout_cfg["benchmark_subdir"] = benchmark_subdir.strip()
+
+            signals_cfg["intervals"] = intervals
+            signals_cfg["tickers"] = ticker_list
+            signals_cfg["strategies"] = strategies
+
+            model_cfg["provider"] = model_provider
+            model_cfg["name"] = model_name.strip()
+            model_cfg["base_url"] = model_base_url.strip() or None
+            model_cfg["temperature"] = float(model_temperature)
+            model_cfg["format"] = model_format
+
+            risk_cfg["risk_per_trade_pct"] = float(risk_per_trade_pct)
+            risk_cfg["stop_loss_pct"] = float(stop_loss_pct)
+            risk_cfg["min_quantity"] = float(min_quantity)
+            risk_cfg["quantity_decimals"] = int(quantity_decimals)
+            risk_cfg["stop_distance_mode"] = stop_distance_mode
+            risk_cfg["atr_period"] = int(atr_period)
+            risk_cfg["atr_multiplier"] = float(atr_multiplier)
+            risk_cfg["max_notional_fraction_per_ticker"] = float(max_notional_fraction)
+
+            phase1_cfg["dag_print_frequency"] = int(phase1_print_frequency)
+            phase1_cfg["dag_use_progress_bar"] = bool(phase1_progress)
+            phase1_cfg["include_dag_experiments"] = phase1_experiments
+            phase1_cfg["export_individual_results"] = bool(phase1_exports)
+            phase1_cfg["export_charts"] = bool(phase1_charts)
+
+            phase2_cfg["dag_print_frequency"] = int(phase2_print_frequency)
+            phase2_cfg["dag_use_progress_bar"] = bool(phase2_progress)
+            phase2_cfg["include_ablation_experiments"] = phase2_experiments
+            phase2_cfg["export_individual_results"] = bool(phase2_exports)
+            phase2_cfg["export_charts"] = bool(phase2_charts)
+
+            write_err = _write_yaml(cfg_path, cfg)
+            if write_err:
+                st.error(f"Save failed: {write_err}")
+            else:
+                st.success("Saved `config/benchmark.yaml`")
 
     st.markdown(
         '<div class="viz-panel-title"><span></span><span>Run via terminal</span></div>',
@@ -49,3 +617,148 @@ def render(root: Path) -> None:
         "uv run python -m trading_dag.cli.benchmark_phase2 --config config/benchmark.yaml",
         language="bash",
     )
+
+    st.markdown(
+        '<div class="viz-panel-title"><span></span><span>Run benchmark in this page</span></div>',
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "This launches the benchmark CLI in the background and streams logs from a file. "
+        "For page-driven runs, monitor progress in `Run logs` below. "
+        "Save `benchmark.yaml` first if you changed form values."
+    )
+    run_state = st.session_state.get(RUN_STATE_KEY)
+    is_running = False
+    if isinstance(run_state, dict):
+        try:
+            pid = int(run_state.get("pid", -1))
+        except (TypeError, ValueError):
+            pid = -1
+        is_running = _is_pid_running(pid)
+        if not is_running and run_state.get("finished_at") is None:
+            run_state["finished_at"] = time.time()
+            run_state["terminal_status"] = "finished"
+            st.session_state[RUN_STATE_KEY] = run_state
+        if (
+            not is_running
+            and run_state.get("finished_at") is not None
+            and not bool(run_state.get("notified_finished", False))
+        ):
+            if bool(run_state.get("stop_requested", False)):
+                st.warning("Benchmark run stopped.")
+            else:
+                st.success("Benchmark run finished.")
+            st.toast("Run status updated", icon="✅")
+            run_state["notified_finished"] = True
+            st.session_state[RUN_STATE_KEY] = run_state
+
+    run_col1, run_col2, run_col3 = st.columns([1, 1, 1])
+    with run_col1:
+        run_phase1 = st.button("Run Phase 1", disabled=is_running, use_container_width=True)
+    with run_col2:
+        run_phase2 = st.button("Run Phase 2", disabled=is_running, use_container_width=True)
+    with run_col3:
+        stop_run = st.button("Stop running task", disabled=not is_running, use_container_width=True)
+
+    if run_phase1 or run_phase2:
+        phase = "phase1" if run_phase1 else "phase2"
+        new_state, start_err = _start_benchmark_run(root, phase, cfg_path)
+        if start_err:
+            st.error(f"Could not start {phase}: {start_err}")
+        else:
+            st.session_state[RUN_STATE_KEY] = new_state
+            st.success(f"Started {phase} run (PID {new_state['pid']}).")
+            st.rerun()
+
+    if stop_run and isinstance(run_state, dict):
+        run_state["stop_requested"] = True
+        st.session_state[RUN_STATE_KEY] = run_state
+        st.session_state[RUN_LOG_AUTO_REFRESH_KEY] = False
+        stop_err = _stop_benchmark_run(run_state)
+        if stop_err:
+            st.warning(f"Could not stop run: {stop_err}")
+        else:
+            run_state["finished_at"] = time.time()
+            run_state["terminal_status"] = "stopped"
+            run_state["notified_finished"] = True
+            st.session_state[RUN_STATE_KEY] = run_state
+            st.session_state[RUN_NOTICE_KEY] = "Benchmark run stopped."
+        st.rerun()
+
+    run_state = st.session_state.get(RUN_STATE_KEY)
+    running_now = False
+    if isinstance(run_state, dict):
+        pid_text = run_state.get("pid", "—")
+        phase_text = run_state.get("phase", "—")
+        log_path = Path(str(run_state.get("log_path", "")))
+        try:
+            started_ts = float(run_state.get("started_at", 0.0))
+        except (TypeError, ValueError):
+            started_ts = 0.0
+        elapsed = max(0.0, time.time() - started_ts) if started_ts > 0 else 0.0
+        running_now = _is_pid_running(int(pid_text)) if str(pid_text).isdigit() else False
+        terminal_status = str(run_state.get("terminal_status", "")).lower()
+        if terminal_status == "stopped":
+            status = "Stopped"
+        elif terminal_status == "finished" or (not running_now and run_state.get("finished_at") is not None):
+            status = "Finished"
+        else:
+            status = "Running"
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Status", status)
+        m2.metric("Phase", str(phase_text))
+        m3.metric("PID", str(pid_text))
+        st.caption(f"Elapsed: {elapsed:.1f}s")
+        st.caption(f"Log file: `{log_path}`")
+        if running_now:
+            st.info("Run is active. Click Refresh in sidebar to update logs.")
+
+    st.markdown(
+        '<div class="viz-panel-title"><span></span><span>Run logs</span></div>',
+        unsafe_allow_html=True,
+    )
+    benchmark_log_dir = (root / "output" / "benchmark").resolve()
+    log_files = _list_streamlit_run_logs(benchmark_log_dir)
+    default_log = None
+    if isinstance(run_state, dict) and run_state.get("log_path"):
+        state_log = Path(str(run_state["log_path"]))
+        if state_log.is_file():
+            default_log = state_log
+    if default_log is None and log_files:
+        default_log = log_files[0]
+
+    if not log_files:
+        st.caption("No streamlit run logs found yet. Start Phase 1 or Phase 2 above.")
+    else:
+        selected = st.selectbox(
+            "Select log file",
+            log_files,
+            index=log_files.index(default_log) if default_log in log_files else 0,
+            format_func=lambda p: p.name,
+            key="benchmark_run_log_file",
+        )
+        tail_lines = st.slider(
+            "Tail lines",
+            min_value=40,
+            max_value=400,
+            value=120,
+            step=20,
+            key="benchmark_run_log_tail_lines",
+        )
+        log_text = _read_log_tail(selected, max_lines=int(tail_lines))
+        log_text = _clean_terminal_output(log_text)
+        if isinstance(run_state, dict) and bool(run_state.get("stop_requested", False)):
+            log_text = _clean_interruption_noise(log_text)
+        st.code(log_text, language="text")
+
+        auto_refresh = st.checkbox(
+            "Live tail (auto refresh every 2s)",
+            value=bool(st.session_state.get(RUN_LOG_AUTO_REFRESH_KEY, True)),
+            key=RUN_LOG_AUTO_REFRESH_KEY,
+            help="Enable to keep updating logs while a run is active.",
+        )
+        if auto_refresh and running_now:
+            st.caption("Live tail is on. Refreshing logs every 2 seconds...")
+            time.sleep(2)
+            st.rerun()
+
