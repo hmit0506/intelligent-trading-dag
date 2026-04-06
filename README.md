@@ -23,7 +23,7 @@ This system employs LangGraph to create a flexible workflow where market data fl
 - **Progress Tracking**: Real-time progress bars and configurable output frequency for backtests
 - **File Management**: Exports (CSV/JSON) and cleanup across **backtest / benchmark / live** subfolders under configurable `output_layout` (see [Output layout](#output-layout-and-files))
 - **Enhanced Output**: Detailed portfolio information, decision history, and performance metrics
-- **Streamlit lab UI**: Browser dashboard under `src/trading_dag/viz/` to browse `output/` benchmark CSVs, Plotly equity curves, and PNG exports (included in default dependencies after `uv sync`)
+- **Streamlit lab UI**: Browser dashboard under `src/trading_dag/viz/` with dedicated `Benchmark Builder`, `Backtest Builder`, and `Live Builder` pages to edit YAML config, run jobs in-page, stop tasks, and monitor live logs
 
 ## Architecture
 
@@ -50,7 +50,7 @@ The system uses a DAG workflow with the following nodes:
 │   ├── gateway/       # Binance API client
 │   ├── indicators/    # Technical indicators
 │   ├── llm/           # LLM integration
-│   ├── viz/           # Streamlit lab app (benchmark artifacts)
+│   ├── viz/           # Streamlit lab app (builders + artifact viewers)
 │   └── utils/         # Configuration and utilities
 ├── config/            # Configuration files
 │   ├── config.yaml    # Main config (copy from config.example.yaml)
@@ -323,13 +323,26 @@ python run.py --benchmark-phase2
 uv run python -m trading_dag.cli.benchmark_phase2 --config config/benchmark.yaml
 ```
 
-5. **Local lab UI (Streamlit)** — browse CSV / PNG / JSON under `output/` (after `uv sync`; no extra install flag):
+5. **Local lab UI (Streamlit)** — configure and run from browser (after `uv sync`; no extra install flag):
 
 ```bash
 uv run streamlit run src/trading_dag/viz/streamlit_app.py
 ```
 
-Point the sidebar **Output directory** at your `output/` folder (or another path with benchmark exports). The app is read-only with respect to trading: it does not run the backtester or submit orders.
+The app now includes three run-control pages:
+
+- **Benchmark Builder** — edits `config/benchmark.yaml`, runs phase 1/2 benchmarks, supports stop + live log tail.
+- **Backtest Builder** — edits `config/config.yaml`, runs standard backtest in-page, supports stop + live log tail.
+- **Live Builder** — edits `config/config.yaml`, runs live mode in-page, supports stop + live log tail.
+
+Mode conflicts are avoided by runtime overrides:
+
+- Backtest Builder runs `trading_dag.cli.backtest --mode-override backtest`
+- Live Builder runs `trading_dag.cli.main --mode-override live`
+
+These overrides apply at run time and do not require changing `config.yaml`'s persisted `mode` value.
+
+The sidebar output root is fixed to `config/config.yaml -> output_layout.root` for deterministic behavior.
 
 ### Phase 1 benchmark — methodology and internals
 
