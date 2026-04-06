@@ -44,6 +44,9 @@ def main() -> None:
     default_out = (root / layout_cfg.root).expanduser().resolve()
     out_dir = Path(default_out).expanduser().resolve()
     path_ok = out_dir.is_dir()
+    if not path_ok:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path_ok = True
 
     with st.sidebar:
         st.markdown("**Workspace**")
@@ -68,17 +71,11 @@ def main() -> None:
             )
             st.caption(f"{n_csv} CSV · {n_png} PNG · {n_json} JSON (all subfolders)")
         else:
-            st.caption("Output root is invalid. Update `output_layout.root` in `config/config.yaml`.")
+            st.caption("Output root is being initialized.")
 
         screen = st.radio("Screen", SCREENS, index=0, label_visibility="visible")
         if st.button("Refresh"):
             st.rerun()
-
-    if not path_ok:
-        st.error(
-            "Output root is not a directory. Update `output_layout.root` in `config/config.yaml`.",
-        )
-        st.stop()
 
     dirs = resolve_artifact_root_dirs(out_dir, layout_cfg)
     for sub in (dirs.backtest, dirs.benchmark, dirs.live):
