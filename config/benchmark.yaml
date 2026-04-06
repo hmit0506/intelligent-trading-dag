@@ -1,22 +1,15 @@
-# Unified benchmark configuration.
-# - "main" mirrors config/config.yaml for engine settings (Phase 1/2 FullDAG vs standalone backtest).
-#   Only "mode" must stay "backtest". Do not duplicate output_layout root/backtest/live here—those
-#   come from config.yaml; under main.output_layout set only benchmark_subdir for the suite folder.
-# - "phase1" compares full DAG vs single-strategy runs.
-# - "phase2" runs DAG ablations (multi-interval, LLM portfolio, risk sizing).
-#
-# Report-oriented preset (FYP): ~14 calendar days, BTC+ETH, 1h+4h, single-strategy controls, charts on.
+# Unified benchmark configuration example.
+# Copy this file to benchmark.yaml and customize values.
+# Copy "main" from config/config.yaml (or config.example.yaml) for engine parity; keep mode: backtest.
+# Under main.output_layout set only benchmark_subdir (root/backtest/live come from config.yaml).
 
 main:
-  # Phase runners require backtest even if config/config.yaml uses mode: live for day-to-day.
   mode: backtest
 
-  # Keep dates / primary_interval / portfolio / signals / model / risk in lockstep with config.yaml.
-  # Historical window (Binance klines): adjust if you need a different regime or length.
-  # Timezone for naive start_date/end_date: fixed offset (0, +8, -5, UTC+8) or IANA (Asia/Hong_Kong).
-  timezone: "+8"
-  start_date: 2026-04-01
-  end_date: 2026-04-02
+  # Fixed UTC offset (0, +8, -5) or IANA name; quote "+8" in YAML if needed.
+  timezone: "0"
+  start_date: '2026-03-09'
+  end_date: '2026-03-13'
 
   primary_interval: 1h
 
@@ -25,13 +18,13 @@ main:
   sync_from_exchange: false
 
   initial_positions:
-    cash: 50000
+    cash: 100000.0
     positions:
       BTCUSDT:
-        long: 0.1
+        long: 0.0
         short: 0.0
       ETHUSDT:
-        long: 0.1
+        long: 0.0
         short: 0.0
 
   show_reasoning: false
@@ -49,6 +42,7 @@ main:
   file_retention_days: 30
   file_keep_latest: 10
 
+  # Same schema as config.example.yaml "risk" (optional; defaults apply if omitted).
   risk:
     risk_per_trade_pct: 0.02
     stop_loss_pct: 0.05
@@ -60,11 +54,19 @@ main:
     max_notional_fraction_per_ticker: 1.0
 
   signals:
-    intervals: ["1h", "4h"]
-    tickers: ["BTCUSDT", "ETHUSDT"]
-    strategies: ['MacdStrategy', 'RSIStrategy', 'BollingerStrategy']
+    intervals:
+      - 1h
+      - 4h
+    tickers:
+      - BTCUSDT
+      - ETHUSDT
+    strategies:
+      - MacdStrategy
+      - RSIStrategy
+      - BollingerStrategy
 
   model:
+    # Change based on your provider/API keys.
     name: "deepseek-chat"
     provider: "openai"
     base_url: "https://api.deepseek.com/v1"
@@ -72,33 +74,29 @@ main:
     format: "json"
 
 phase1:
-  # FullDAG (auto) vs listed single-strategy DAGs.
+  # Edit paths, dates, and experiment lists before running.
 
-  # Large value = less console spam (does not reduce LLM calls).
-  dag_print_frequency: 999
+  # List comparison DAG runs only (reference full DAG is auto-prepended; do not list FullDAG).
+  # [] = reference plus all single-strategy variants.
+  dag_print_frequency: 1
+  dag_use_progress_bar: false
 
-  dag_use_progress_bar: true
+  include_dag_experiments:
+    - SingleMACD
+    - SingleBollinger
+    - SingleRSI
 
-  # Names: SingleMACD, SingleRSI, SingleBollinger
-  include_dag_experiments: ["SingleMACD", "SingleBollinger", "SingleRSI"]
-
-  # Per-experiment summary/equity CSV (in addition to combined suite files and charts).
   export_individual_results: true
-
-  # If true, write comparison PNGs (equity overlays + total return bars) next to CSV outputs.
   export_charts: true
+
+  # Optional: set output_dir to override the default (config.yaml root + benchmark_subdir).
 
 phase2:
-  # FullDAG (auto) vs all registered ablations (empty list = Ablate_MultiInterval, LLMPortfolio, RiskSizing).
-  # Set include_ablation_experiments: ["Ablate_MultiInterval"] (etc.) for a faster partial suite.
-
+  # [] = reference plus all ablations. Non-empty = only those Ablate_* names (FullDAG auto-prepended).
+  # Ablation benchmark (full DAG vs removing one subsystem at a time).
   dag_print_frequency: 999
   dag_use_progress_bar: true
-
+  # Ablate_MultiInterval, Ablate_LLMPortfolio, Ablate_RiskSizing
   include_ablation_experiments: []
-
   export_individual_results: true
-
-  # Comparison charts (PNG) alongside combined CSVs.
   export_charts: true
-
