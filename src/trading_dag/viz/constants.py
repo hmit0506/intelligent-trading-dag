@@ -1,4 +1,6 @@
-"""Streamlit navigation labels."""
+"""Streamlit navigation labels and session_state keys."""
+
+SESSION_EMERGENCY_KILL_ALL_TS_KEY = "viz_emergency_kill_all_ts"
 
 SCREEN_BACKTEST_OUTPUT = "Backtest output"
 SCREEN_BENCHMARK_SUITE = "Benchmark suite"

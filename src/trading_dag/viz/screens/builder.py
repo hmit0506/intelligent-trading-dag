@@ -15,8 +15,9 @@ from typing import Any
 import streamlit as st
 from ruamel.yaml import YAML
 
-from trading_dag.viz.helpers import _page_header
+from trading_dag.viz.helpers import _page_header, emergency_kill_all_since_run_started
 from trading_dag.viz.log_view import clean_reasoning_blocks, estimate_log_view_height, prepend_latest_snapshot_to_tail
+from trading_dag.viz.run_process_cleanup import benchmark_suite_patterns, pkill_patterns_until_clear
 
 BENCHMARK_CONFIG_REL = Path("config/benchmark.yaml")
 DEFAULT_INTERVAL_OPTIONS = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
@@ -311,11 +312,14 @@ def _start_benchmark_run(root: Path, phase: str, cfg_path: Path) -> tuple[dict[s
             )
     except Exception as exc:
         return None, str(exc)
+    cfg_resolved = str(cfg_path.resolve())
     state = {
         "pid": process.pid,
         "pgid": os.getpgid(process.pid),
         "phase": phase,
         "cmd": " ".join(cmd),
+        "cfg_path": cfg_resolved,
+        "cmd_match": f"{cli_module} --config {cfg_resolved}",
         "log_path": str(log_path),
         "started_at": time.time(),
         "stop_requested": False,
@@ -325,48 +329,58 @@ def _start_benchmark_run(root: Path, phase: str, cfg_path: Path) -> tuple[dict[s
     return state, None
 
 
-def _stop_benchmark_run(state: dict[str, Any]) -> str | None:
+def _stop_benchmark_run(state: dict[str, Any], cfg_path: Path) -> str | None:
     try:
         pid = int(state.get("pid", -1))
     except (TypeError, ValueError):
-        return "Invalid PID."
-    if pid <= 0:
-        return "Invalid PID."
-    try:
-        pgid = int(state.get("pgid", pid))
-    except (TypeError, ValueError):
-        pgid = pid
-    # Escalating stop for process group: SIGINT -> SIGTERM -> SIGKILL.
-    def _send_group(sig: int) -> None:
+        pid = -1
+    if pid > 0:
         try:
-            os.killpg(pgid, sig)
-        except OSError:
-            os.kill(pid, sig)
+            pgid = int(state.get("pgid", pid))
+        except (TypeError, ValueError):
+            pgid = pid
 
-    for sig, wait_s in ((signal.SIGINT, 1.0), (signal.SIGTERM, 1.5), (signal.SIGKILL, 1.0)):
-        try:
-            _send_group(sig)
-        except OSError:
-            pass
-        # Extra fallback: kill direct children of the launcher process.
-        try:
-            subprocess.run(
-                ["pkill", f"-{sig.value if hasattr(sig, 'value') else int(sig)}", "-P", str(pid)],
-                capture_output=True,
-                text=True,
-                timeout=1.0,
-                check=False,
-            )
-        except Exception:
-            pass
-        deadline = time.time() + wait_s
-        while time.time() < deadline:
+        def _send_group(sig: int) -> None:
+            try:
+                os.killpg(pgid, sig)
+            except OSError:
+                os.kill(pid, sig)
+
+        for sig, wait_s in ((signal.SIGINT, 1.0), (signal.SIGTERM, 1.5), (signal.SIGKILL, 1.0)):
+            try:
+                _send_group(sig)
+            except OSError:
+                pass
+            try:
+                subprocess.run(
+                    ["pkill", f"-{sig.value if hasattr(sig, 'value') else int(sig)}", "-P", str(pid)],
+                    capture_output=True,
+                    text=True,
+                    timeout=1.0,
+                    check=False,
+                )
+            except Exception:
+                pass
+            deadline = time.time() + wait_s
+            while time.time() < deadline:
+                if not _is_pid_running(pid):
+                    break
+                time.sleep(0.1)
             if not _is_pid_running(pid):
-                return None
-            time.sleep(0.1)
-    if _is_pid_running(pid):
-        return "Process is still running after SIGKILL."
-    return None
+                break
+        # Continue to command-line cleanup even if the launcher PID is stuck.
+
+    patterns = list(dict.fromkeys(benchmark_suite_patterns(cfg_path)))
+    cmd_match = str(state.get("cmd_match", "")).strip()
+    if cmd_match and cmd_match not in patterns:
+        patterns.append(cmd_match)
+    orphan_err = pkill_patterns_until_clear(patterns)
+    errs: list[str] = []
+    if pid > 0 and _is_pid_running(pid):
+        errs.append("Primary launcher PID is still alive after SIGKILL.")
+    if orphan_err:
+        errs.append(orphan_err)
+    return "; ".join(errs) if errs else None
 
 
 def render(root: Path) -> None:
@@ -800,9 +814,15 @@ def render(root: Path) -> None:
             except Exception:
                 failure_reason = None
             run_state["finished_at"] = time.time()
-            run_state["terminal_status"] = "failed" if failure_reason else "finished"
-            if failure_reason and not bool(run_state.get("stop_requested", False)):
-                run_state["failure_reason"] = failure_reason
+            if failure_reason:
+                run_state["terminal_status"] = "failed"
+                if not bool(run_state.get("stop_requested", False)):
+                    run_state["failure_reason"] = failure_reason
+            elif emergency_kill_all_since_run_started(run_state, st.session_state):
+                run_state["terminal_status"] = "stopped"
+                run_state["stop_requested"] = True
+            else:
+                run_state["terminal_status"] = "finished"
             st.session_state[RUN_STATE_KEY] = run_state
             _persist_run_state(root, run_state)
         if (
@@ -810,7 +830,9 @@ def render(root: Path) -> None:
             and run_state.get("finished_at") is not None
             and not bool(run_state.get("notified_finished", False))
         ):
-            if bool(run_state.get("stop_requested", False)):
+            if bool(run_state.get("stop_requested", False)) or str(
+                run_state.get("terminal_status", "")
+            ).lower() == "stopped":
                 st.warning("Benchmark run stopped.")
             elif str(run_state.get("terminal_status", "")).lower() == "failed":
                 reason = str(run_state.get("failure_reason", "unknown error"))
@@ -828,7 +850,13 @@ def render(root: Path) -> None:
     with run_col2:
         run_phase2 = st.button("Run Phase 2", disabled=is_running, use_container_width=True)
     with run_col3:
-        stop_run = st.button("Stop running task", disabled=not is_running, use_container_width=True)
+        stop_run = st.button(
+            "Stop running task (all phases for this config)",
+            disabled=False,
+            use_container_width=True,
+            help="Always available: stops the tracked PID if any, then kills every benchmark CLI "
+            "process using this benchmark.yaml path (orphan-safe).",
+        )
 
     if run_phase1 or run_phase2:
         phase = "phase1" if run_phase1 else "phase2"
@@ -841,20 +869,26 @@ def render(root: Path) -> None:
             st.success(f"Started {phase} run (PID {new_state['pid']}).")
             st.rerun()
 
-    if stop_run and isinstance(run_state, dict):
-        run_state["stop_requested"] = True
-        st.session_state[RUN_STATE_KEY] = run_state
-        _persist_run_state(root, run_state)
-        stop_err = _stop_benchmark_run(run_state)
+    if stop_run:
+        rs = run_state if isinstance(run_state, dict) else {}
+        if isinstance(run_state, dict):
+            run_state["stop_requested"] = True
+            st.session_state[RUN_STATE_KEY] = run_state
+            _persist_run_state(root, run_state)
+        stop_err = _stop_benchmark_run(rs, cfg_path)
         if stop_err:
-            st.warning(f"Could not stop run: {stop_err}")
-        else:
+            st.warning(f"Could not fully stop run: {stop_err}")
+        if isinstance(run_state, dict):
             run_state["finished_at"] = time.time()
             run_state["terminal_status"] = "stopped"
             run_state["notified_finished"] = True
             st.session_state[RUN_STATE_KEY] = run_state
             _persist_run_state(root, run_state)
-            st.session_state[RUN_NOTICE_KEY] = "Benchmark run stopped."
+            st.session_state[RUN_NOTICE_KEY] = "Benchmark run stopped (including orphan processes for this config)."
+        else:
+            _persist_run_state(root, None)
+            st.session_state.pop(RUN_STATE_KEY, None)
+            st.success("Sent stop to all benchmark CLI processes for this config (no active UI run state).")
         st.rerun()
 
     run_state = st.session_state.get(RUN_STATE_KEY)

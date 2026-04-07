@@ -9,6 +9,27 @@ import pandas as pd
 import streamlit as st
 import yaml
 
+from trading_dag.viz.constants import SESSION_EMERGENCY_KILL_ALL_TS_KEY
+
+
+def emergency_kill_all_since_run_started(run_state: dict[str, Any], session_state: Any) -> bool:
+    """
+    True if the sidebar emergency kill-all ran successfully after this run started.
+
+    Uses ``time.time()`` timestamps from ``run_state["started_at"]`` and session state.
+    """
+    try:
+        kill_ts = float(session_state.get(SESSION_EMERGENCY_KILL_ALL_TS_KEY, 0) or 0)
+    except (TypeError, ValueError):
+        kill_ts = 0.0
+    if kill_ts <= 0:
+        return False
+    try:
+        started = float(run_state.get("started_at", 0) or 0)
+    except (TypeError, ValueError):
+        started = 0.0
+    return kill_ts >= started - 0.5
+
 
 def project_root() -> Path:
     """Repository root (``.../src/trading_dag/viz/helpers.py`` → parents[3])."""

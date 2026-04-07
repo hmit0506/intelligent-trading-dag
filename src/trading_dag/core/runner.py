@@ -154,11 +154,11 @@ class TradingSystemRunner:
         from trading_dag.data.provider import BinanceDataProvider
         from colorama import Fore, Style
         
-        # Get API credentials from environment
+        # Get Binance API credentials from environment.
         import os
         api_key = os.getenv("BINANCE_API_KEY")
         api_secret = os.getenv("BINANCE_API_SECRET")
-        
+
         if not api_key or not api_secret:
             raise ValueError("BINANCE_API_KEY and BINANCE_API_SECRET must be set to sync from exchange")
         

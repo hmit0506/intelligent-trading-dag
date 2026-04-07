@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 
 import streamlit as st
 
 from trading_dag.utils.output_layout import resolve_artifact_root_dirs
 from trading_dag.viz.config_sync import get_viz_output_layout
 from trading_dag.viz.constants import (
+    SESSION_EMERGENCY_KILL_ALL_TS_KEY,
     SCREEN_BACKTEST_OUTPUT,
     SCREEN_BENCHMARK_SUITE,
     SCREEN_BUILDER,
@@ -27,6 +29,7 @@ from trading_dag.viz.screens import (
     live_output,
     setup,
 )
+from trading_dag.viz.run_process_cleanup import kill_all_trading_dag_cli_processes
 from trading_dag.viz.theme import inject_theme_css
 
 
@@ -76,6 +79,20 @@ def main() -> None:
         screen = st.radio("Screen", SCREENS, index=0, label_visibility="visible")
         if st.button("Refresh"):
             st.rerun()
+
+        with st.expander("Emergency: stop background CLI runs", expanded=False):
+            st.caption(
+                "Sends SIGTERM then SIGKILL to every process whose command line matches "
+                "`trading_dag.cli.main`, `.backtest`, or `.benchmark_phase1/2`. "
+                "May affect other terminals or project clones on this machine."
+            )
+            if st.button("Kill all Trading DAG CLI processes now", type="secondary"):
+                err = kill_all_trading_dag_cli_processes()
+                if err:
+                    st.warning(err)
+                else:
+                    st.session_state[SESSION_EMERGENCY_KILL_ALL_TS_KEY] = time.time()
+                    st.success("No matching CLI processes remain (by pgrep).")
 
     dirs = resolve_artifact_root_dirs(out_dir, layout_cfg)
     for sub in (dirs.backtest, dirs.benchmark, dirs.live):

@@ -14,7 +14,8 @@ from typing import Any
 import streamlit as st
 from ruamel.yaml import YAML
 
-from trading_dag.viz.helpers import _page_header
+from trading_dag.viz.helpers import _page_header, emergency_kill_all_since_run_started
+from trading_dag.viz.run_process_cleanup import live_pattern, pkill_patterns_until_clear
 
 CONFIG_PATH_REL = Path("config/config.yaml")
 DEFAULT_INTERVAL_OPTIONS = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
@@ -188,10 +189,13 @@ def _start_live_run(root: Path, cfg_path: Path) -> tuple[dict[str, Any] | None, 
             )
     except Exception as exc:
         return None, str(exc)
+    cfg_resolved = str(cfg_path.resolve())
     return {
         "pid": process.pid,
         "pgid": os.getpgid(process.pid),
         "cmd": " ".join(cmd),
+        "cfg_path": cfg_resolved,
+        "cmd_match": f"trading_dag.cli.main --config {cfg_resolved} --mode-override live",
         "log_path": str(log_path),
         "started_at": time.time(),
         "stop_requested": False,
@@ -200,47 +204,57 @@ def _start_live_run(root: Path, cfg_path: Path) -> tuple[dict[str, Any] | None, 
     }, None
 
 
-def _stop_run(state: dict[str, Any]) -> str | None:
+def _stop_run(state: dict[str, Any], cfg_path: Path) -> str | None:
     try:
         pid = int(state.get("pid", -1))
     except (TypeError, ValueError):
-        return "Invalid PID."
-    if pid <= 0:
-        return "Invalid PID."
-    try:
-        pgid = int(state.get("pgid", pid))
-    except (TypeError, ValueError):
-        pgid = pid
+        pid = -1
+    if pid > 0:
+        try:
+            pgid = int(state.get("pgid", pid))
+        except (TypeError, ValueError):
+            pgid = pid
 
-    def _send_group(sig: int) -> None:
-        try:
-            os.killpg(pgid, sig)
-        except OSError:
-            os.kill(pid, sig)
+        def _send_group(sig: int) -> None:
+            try:
+                os.killpg(pgid, sig)
+            except OSError:
+                os.kill(pid, sig)
 
-    for sig, wait_s in ((signal.SIGINT, 1.0), (signal.SIGTERM, 1.5), (signal.SIGKILL, 1.0)):
-        try:
-            _send_group(sig)
-        except OSError:
-            pass
-        try:
-            subprocess.run(
-                ["pkill", f"-{sig.value if hasattr(sig, 'value') else int(sig)}", "-P", str(pid)],
-                capture_output=True,
-                text=True,
-                timeout=1.0,
-                check=False,
-            )
-        except Exception:
-            pass
-        deadline = time.time() + wait_s
-        while time.time() < deadline:
+        for sig, wait_s in ((signal.SIGINT, 1.0), (signal.SIGTERM, 1.5), (signal.SIGKILL, 1.0)):
+            try:
+                _send_group(sig)
+            except OSError:
+                pass
+            try:
+                subprocess.run(
+                    ["pkill", f"-{sig.value if hasattr(sig, 'value') else int(sig)}", "-P", str(pid)],
+                    capture_output=True,
+                    text=True,
+                    timeout=1.0,
+                    check=False,
+                )
+            except Exception:
+                pass
+            deadline = time.time() + wait_s
+            while time.time() < deadline:
+                if not _is_pid_running(pid):
+                    break
+                time.sleep(0.1)
             if not _is_pid_running(pid):
-                return None
-            time.sleep(0.1)
-    if _is_pid_running(pid):
-        return "Process is still running after SIGKILL."
-    return None
+                break
+
+    patterns = [live_pattern(cfg_path)]
+    cmd_match = str(state.get("cmd_match", "")).strip()
+    if cmd_match and cmd_match not in patterns:
+        patterns.append(cmd_match)
+    orphan_err = pkill_patterns_until_clear(patterns)
+    errs: list[str] = []
+    if pid > 0 and _is_pid_running(pid):
+        errs.append("Primary launcher PID is still alive after SIGKILL.")
+    if orphan_err:
+        errs.append(orphan_err)
+    return "; ".join(errs) if errs else None
 
 
 def render(root: Path) -> None:
@@ -528,16 +542,24 @@ def render(root: Path) -> None:
             except Exception:
                 failure_reason = None
             run_state["finished_at"] = time.time()
-            run_state["terminal_status"] = "failed" if failure_reason else "finished"
-            if failure_reason and not bool(run_state.get("stop_requested", False)):
-                run_state["failure_reason"] = failure_reason
+            if failure_reason:
+                run_state["terminal_status"] = "failed"
+                if not bool(run_state.get("stop_requested", False)):
+                    run_state["failure_reason"] = failure_reason
+            elif emergency_kill_all_since_run_started(run_state, st.session_state):
+                run_state["terminal_status"] = "stopped"
+                run_state["stop_requested"] = True
+            else:
+                run_state["terminal_status"] = "finished"
             st.session_state[RUN_STATE_KEY] = run_state
         if (
             not is_running
             and run_state.get("finished_at") is not None
             and not bool(run_state.get("notified_finished", False))
         ):
-            if bool(run_state.get("stop_requested", False)):
+            if bool(run_state.get("stop_requested", False)) or str(
+                run_state.get("terminal_status", "")
+            ).lower() == "stopped":
                 st.warning("Live run stopped.")
             elif str(run_state.get("terminal_status", "")).lower() == "failed":
                 reason = str(run_state.get("failure_reason", "unknown error"))
@@ -552,7 +574,12 @@ def render(root: Path) -> None:
     with c_run:
         run_clicked = st.button("Run live mode", disabled=is_running, use_container_width=True)
     with c_stop:
-        stop_clicked = st.button("Stop live task", disabled=not is_running, use_container_width=True)
+        stop_clicked = st.button(
+            "Stop live task (all for this config)",
+            disabled=False,
+            use_container_width=True,
+            help="Always available: kills tracked PID then every live CLI using this config.yaml.",
+        )
 
     if run_clicked:
         new_state, start_err = _start_live_run(root, cfg_path)
@@ -563,18 +590,23 @@ def render(root: Path) -> None:
             st.success(f"Started live run (PID {new_state['pid']}).")
             st.rerun()
 
-    if stop_clicked and isinstance(run_state, dict):
-        run_state["stop_requested"] = True
-        st.session_state[RUN_STATE_KEY] = run_state
-        stop_err = _stop_run(run_state)
+    if stop_clicked:
+        rs = run_state if isinstance(run_state, dict) else {}
+        if isinstance(run_state, dict):
+            run_state["stop_requested"] = True
+            st.session_state[RUN_STATE_KEY] = run_state
+        stop_err = _stop_run(rs, cfg_path)
         if stop_err:
-            st.warning(f"Could not stop run: {stop_err}")
-        else:
+            st.warning(f"Could not fully stop run: {stop_err}")
+        if isinstance(run_state, dict):
             run_state["finished_at"] = time.time()
             run_state["terminal_status"] = "stopped"
             run_state["notified_finished"] = True
             st.session_state[RUN_STATE_KEY] = run_state
-            st.session_state[RUN_NOTICE_KEY] = "Live run stopped."
+            st.session_state[RUN_NOTICE_KEY] = "Live run stopped (including orphans for this config)."
+        else:
+            st.session_state.pop(RUN_STATE_KEY, None)
+            st.success("Sent stop to all live CLI processes for this config (no active UI run state).")
         st.rerun()
 
     run_state = st.session_state.get(RUN_STATE_KEY)
