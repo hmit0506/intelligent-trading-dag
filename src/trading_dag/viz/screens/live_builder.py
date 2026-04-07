@@ -26,6 +26,7 @@ RUN_LOG_AUTO_REFRESH_KEY = "std_live_run_log_auto_refresh"
 RUN_NOTICE_KEY = "std_live_run_notice"
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 TRACEBACK_BLOCK_RE = re.compile(r"Traceback \(most recent call last\):[\s\S]*?(?:KeyboardInterrupt|$)")
+PY_FATAL_BLOCK_RE = re.compile(r"object address\s*:[\s\S]*?lost sys\.stderr", re.IGNORECASE)
 YAML_RW = YAML(typ="rt")
 YAML_RW.preserve_quotes = True
 YAML_RW.indent(mapping=2, sequence=4, offset=2)
@@ -122,7 +123,8 @@ def _clean_terminal_output(text: str) -> str:
 
 
 def _clean_interruption_noise(text: str) -> str:
-    return TRACEBACK_BLOCK_RE.sub("[interrupted traceback omitted]\n", text)
+    cleaned = TRACEBACK_BLOCK_RE.sub("[interrupted traceback omitted]\n", text)
+    return PY_FATAL_BLOCK_RE.sub("[python fatal stderr block omitted]\n", cleaned)
 
 
 def _list_run_logs(log_dir: Path) -> list[Path]:
@@ -152,12 +154,15 @@ def _start_live_run(root: Path, cfg_path: Path) -> tuple[dict[str, Any] | None, 
     ]
     try:
         with log_path.open("w", encoding="utf-8") as log_file:
+            # Non-TTY stdout is block-buffered by default; force line-buffered prints into the log file.
+            run_env = {**os.environ, "PYTHONUNBUFFERED": "1"}
             process = subprocess.Popen(
                 cmd,
                 cwd=str(root),
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
+                env=run_env,
             )
     except Exception as exc:
         return None, str(exc)
@@ -597,8 +602,7 @@ def render(root: Path) -> None:
         key="std_live_log_tail_lines",
     )
     log_text = _clean_terminal_output(_read_log_tail(selected, max_lines=int(tail_lines)))
-    if isinstance(run_state, dict) and bool(run_state.get("stop_requested", False)):
-        log_text = _clean_interruption_noise(log_text)
+    log_text = _clean_interruption_noise(log_text)
     st.code(log_text, language="text")
 
     auto_refresh = st.checkbox(

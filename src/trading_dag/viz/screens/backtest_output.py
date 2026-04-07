@@ -19,6 +19,21 @@ from trading_dag.viz.helpers import (
 )
 
 
+def _format_compact_currency(value: float | None) -> str:
+    """Format currency in compact form to avoid metric truncation."""
+    if value is None:
+        return "—"
+    sign = "-" if value < 0 else ""
+    abs_value = abs(value)
+    if abs_value >= 1_000_000_000:
+        return f"{sign}${abs_value / 1_000_000_000:.2f}B"
+    if abs_value >= 1_000_000:
+        return f"{sign}${abs_value / 1_000_000:.2f}M"
+    if abs_value >= 1_000:
+        return f"{sign}${abs_value / 1_000:.2f}k"
+    return f"{sign}${abs_value:,.2f}"
+
+
 def render(backtest_dir: Path) -> None:
     perf_csvs = _list_standard_backtest_performance_csvs(backtest_dir)
     trade_jsons = _list_standard_backtest_trade_jsons(backtest_dir)
@@ -65,7 +80,11 @@ def render(backtest_dir: Path) -> None:
             tr, pnl, sharpe, mdd = _kpis_from_value_series(plot_df["portfolio_value"])
             k1, k2, k3, k4 = st.columns(4)
             k1.metric("Total return", f"{tr:.2f}%" if tr is not None else "—")
-            k2.metric("P&L vs start", f"${pnl:,.2f}" if pnl is not None else "—")
+            k2.metric(
+                "P&L vs start",
+                _format_compact_currency(pnl),
+                help=f"Exact value: ${pnl:,.2f}" if pnl is not None else None,
+            )
             k3.metric("Sharpe (approx.)", f"{sharpe:+.2f}" if sharpe is not None else "—")
             k4.metric("Max drawdown", f"{mdd:.2f}%" if mdd is not None else "—")
             st.caption(

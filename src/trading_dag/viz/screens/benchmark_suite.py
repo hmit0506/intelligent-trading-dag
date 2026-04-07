@@ -22,6 +22,21 @@ from trading_dag.viz.helpers import (
 )
 
 
+def _format_compact_currency(value: float | None) -> str:
+    """Format currency in compact form to avoid metric truncation."""
+    if value is None:
+        return "—"
+    sign = "-" if value < 0 else ""
+    abs_value = abs(value)
+    if abs_value >= 1_000_000_000:
+        return f"{sign}${abs_value / 1_000_000_000:.2f}B"
+    if abs_value >= 1_000_000:
+        return f"{sign}${abs_value / 1_000_000:.2f}M"
+    if abs_value >= 1_000:
+        return f"{sign}${abs_value / 1_000:.2f}k"
+    return f"{sign}${abs_value:,.2f}"
+
+
 def render(benchmark_dir: Path) -> None:
     csvs = _list_csvs(benchmark_dir)
     pngs = _list_pngs(benchmark_dir)
@@ -80,7 +95,8 @@ def render(benchmark_dir: Path) -> None:
                     k1.metric("Total return", f"{tr:.2f}%" if tr is not None else "—")
                     k2.metric(
                         "Total realized gains",
-                        f"${realized:,.2f}" if realized is not None else "—",
+                        _format_compact_currency(realized),
+                        help=f"Exact value: ${realized:,.2f}" if realized is not None else None,
                     )
                     k3.metric("Sharpe ratio", f"{sharpe:+.2f}" if sharpe is not None else "—")
                     k4.metric("Maximum drawdown", f"{mdd:.2f}%" if mdd is not None else "—")

@@ -50,6 +50,16 @@ def inject_theme_css() -> None:
                 --viz-font-ui: {THEME["font_ui"]};
                 --viz-font-mono: {THEME["font_mono"]};
                 --viz-radius: {THEME["radius"]};
+                /* BaseWeb tokens used by Streamlit widgets/popovers */
+                --background-primary: {THEME["surface_card"]};
+                --background-secondary: {THEME["surface"]};
+                --background-tertiary: {THEME["surface_card"]};
+                --content-primary: {THEME["text"]};
+                --content-secondary: {THEME["muted"]};
+                --content-tertiary: {THEME["muted"]};
+                --border-opaque: {THEME["surface_alt"]};
+                --menu-fill: {THEME["surface_card"]};
+                --menu-font-color: {THEME["text"]};
             }}
             html, body, [data-testid="stAppViewContainer"] {{
                 background-color: var(--viz-bg) !important;
@@ -70,6 +80,14 @@ def inject_theme_css() -> None:
             }}
             .stRadio label, .stCheckbox label, .stSelectbox label, .stTextInput label,
             .stMultiSelect label, .stDateInput label {{ color: var(--viz-text) !important; }}
+            /*
+             * Dropdown Contrast Lock
+             * Keep Streamlit/BaseWeb select and multiselect controls readable on light theme:
+             * - input chips and text
+             * - popover/listbox panel
+             * - option hover/selected states
+             * - empty state row ("No results")
+             */
             [data-baseweb="select"] *,
             [data-baseweb="popover"] *,
             [role="listbox"] *,
@@ -77,6 +95,120 @@ def inject_theme_css() -> None:
             .stSelectbox div,
             .stMultiSelect div {{
                 color: var(--viz-text) !important;
+            }}
+            [data-baseweb="popover"],
+            [data-baseweb="popover"] > div,
+            [data-baseweb="menu"],
+            [data-baseweb="menu"] > ul,
+            [role="listbox"] {{
+                background: var(--viz-surface-card) !important;
+                border-color: var(--viz-surface-alt) !important;
+            }}
+            [role="option"] {{
+                background: var(--viz-surface-card) !important;
+                color: var(--viz-text) !important;
+            }}
+            [role="option"][aria-selected="true"],
+            [role="option"][aria-selected="true"] *,
+            [role="option"][data-highlighted="true"],
+            [role="option"][data-highlighted="true"] * {{
+                background: var(--viz-accent-soft) !important;
+                color: var(--viz-text) !important;
+                -webkit-text-fill-color: var(--viz-text) !important;
+            }}
+            /* BaseWeb select empty state ("No results") and list internals */
+            [data-baseweb="menu"] li,
+            [data-baseweb="menu"] li *,
+            [data-baseweb="menu"] ul,
+            [data-baseweb="menu"] [aria-disabled="true"],
+            [data-baseweb="menu"] [aria-disabled="true"] *,
+            [data-baseweb="popover"] [data-baseweb="menu"] div,
+            [data-baseweb="popover"] [data-baseweb="menu"] span {{
+                background: var(--viz-surface-card) !important;
+                background-color: var(--viz-surface-card) !important;
+                background-image: none !important;
+                color: var(--viz-text) !important;
+                -webkit-text-fill-color: var(--viz-text) !important;
+            }}
+            [data-baseweb="menu"] li[aria-disabled="true"],
+            [data-baseweb="menu"] li[aria-disabled="true"] *,
+            [data-baseweb="menu"] [aria-disabled="true"],
+            [data-baseweb="menu"] [aria-disabled="true"] * {{
+                opacity: 1 !important;
+                color: var(--viz-text) !important;
+                -webkit-text-fill-color: var(--viz-text) !important;
+            }}
+            [data-baseweb="popover"] ul[role="listbox"],
+            [data-baseweb="popover"] ul[role="listbox"] *,
+            [data-baseweb="popover"] li[role="option"],
+            [data-baseweb="popover"] li[role="option"] * {{
+                background: var(--viz-surface-card) !important;
+                background-color: var(--viz-surface-card) !important;
+                background-image: none !important;
+                color: var(--viz-text) !important;
+            }}
+            /* Hard override for multiselect dropdown empty panel */
+            [data-baseweb="popover"] {{
+                background: transparent !important;
+            }}
+            [data-baseweb="popover"] > div {{
+                background: var(--viz-surface-card) !important;
+                border: 1px solid var(--viz-surface-alt) !important;
+                box-shadow: 0 4px 12px rgba(28, 34, 48, 0.12) !important;
+            }}
+            /* Force dropdown popover subtree to light panel (fix stubborn dark "No results"). */
+            [data-baseweb="popover"] div,
+            [data-baseweb="popover"] ul,
+            [data-baseweb="popover"] li,
+            [data-baseweb="popover"] p,
+            [data-baseweb="popover"] span {{
+                background-color: var(--viz-surface-card) !important;
+                background-image: none !important;
+                color: var(--viz-text) !important;
+                -webkit-text-fill-color: var(--viz-text) !important;
+                opacity: 1 !important;
+            }}
+            [data-baseweb="popover"] ul[role="listbox"] {{
+                background-color: var(--viz-surface-card) !important;
+                border: 0 !important;
+                box-shadow: none !important;
+            }}
+            [data-baseweb="popover"] ul[role="listbox"] > li,
+            [data-baseweb="popover"] ul[role="listbox"] > li > div,
+            [data-baseweb="popover"] ul[role="listbox"] > li > span,
+            [data-baseweb="popover"] ul[role="listbox"] > li p {{
+                background-color: var(--viz-surface-card) !important;
+                color: var(--viz-text) !important;
+                opacity: 1 !important;
+                -webkit-text-fill-color: var(--viz-text) !important;
+            }}
+            /* Empty-state row (e.g. "No results") usually rendered outside role=option */
+            [data-baseweb="popover"] ul[role="listbox"] > div,
+            [data-baseweb="popover"] ul[role="listbox"] > div *,
+            [data-baseweb="popover"] ul[role="listbox"] [aria-disabled="true"],
+            [data-baseweb="popover"] ul[role="listbox"] [aria-disabled="true"] * {{
+                background-color: var(--viz-surface-card) !important;
+                color: var(--viz-text) !important;
+                -webkit-text-fill-color: var(--viz-text) !important;
+                opacity: 1 !important;
+            }}
+            /* Real options keep visible hover/active feedback */
+            [data-baseweb="popover"] [role="option"],
+            [data-baseweb="popover"] [role="option"] * {{
+                background-color: var(--viz-surface-card) !important;
+                color: var(--viz-text) !important;
+                -webkit-text-fill-color: var(--viz-text) !important;
+            }}
+            [data-baseweb="popover"] [role="option"]:hover,
+            [data-baseweb="popover"] [role="option"]:hover *,
+            [data-baseweb="popover"] [role="option"][aria-selected="true"],
+            [data-baseweb="popover"] [role="option"][aria-selected="true"] *,
+            [data-baseweb="popover"] [role="option"][data-highlighted="true"],
+            [data-baseweb="popover"] [role="option"][data-highlighted="true"] * {{
+                background-color: rgba(48, 120, 240, 0.12) !important;
+                border-color: rgba(48, 120, 240, 0.28) !important;
+                color: var(--viz-text) !important;
+                -webkit-text-fill-color: var(--viz-text) !important;
             }}
             [data-testid="stMetricValue"] {{ color: var(--viz-accent) !important; }}
             [data-testid="stMarkdownContainer"] a {{ color: var(--viz-accent); }}
@@ -198,6 +330,12 @@ def inject_theme_css() -> None:
                 border: 1px solid var(--viz-surface-alt) !important;
                 border-radius: var(--viz-radius) !important;
             }}
+            [data-testid="stJson"] > div,
+            [data-testid="stJson"] pre,
+            [data-testid="stJson"] code,
+            [data-testid="stJson"] div {{
+                background: var(--viz-surface-card) !important;
+            }}
             [data-testid="stCodeBlock"] pre,
             [data-testid="stCode"] pre {{
                 background: var(--viz-surface-card) !important;
@@ -217,6 +355,23 @@ def inject_theme_css() -> None:
             [data-testid="stText"] *,
             [data-testid="stAlert"] *,
             [data-testid="stExpander"] * {{
+                color: var(--viz-text) !important;
+            }}
+            /* React JSON viewer internals used by st.json */
+            .react-json-view,
+            .react-json-view *,
+            .react-json-view span,
+            .react-json-view div {{
+                color: var(--viz-text) !important;
+                background: var(--viz-surface-card) !important;
+                -webkit-text-fill-color: var(--viz-text) !important;
+            }}
+            .react-json-view .string-value {{
+                color: var(--viz-accent) !important;
+                -webkit-text-fill-color: var(--viz-accent) !important;
+            }}
+            .react-json-view .object-key,
+            .react-json-view .variable-value {{
                 color: var(--viz-text) !important;
             }}
             [data-testid="stCaption"],
@@ -280,6 +435,13 @@ def inject_theme_css() -> None:
             input, textarea, [contenteditable="true"] {{
                 color: var(--viz-text) !important;
                 -webkit-text-fill-color: var(--viz-text) !important;
+                caret-color: var(--viz-accent) !important;
+            }}
+            [data-baseweb="input"] input,
+            [data-baseweb="textarea"] textarea,
+            [data-baseweb="select"] input,
+            [role="combobox"] {{
+                caret-color: var(--viz-accent) !important;
             }}
             /*
              * Sidebar: Streamlit themes often set light-on-light (white/gray text on white).
@@ -332,6 +494,27 @@ def inject_theme_css() -> None:
             [data-testid="stSidebar"] .stButton > button:hover,
             [data-testid="stSidebar"] .stButton > button:hover * {{
                 color: var(--viz-button-text) !important;
+            }}
+            /* Keep scrollbars visible across app panels and code windows. */
+            * {{
+                scrollbar-width: thin;
+                scrollbar-color: rgba(42, 51, 68, 0.75) rgba(168, 188, 212, 0.45);
+            }}
+            *::-webkit-scrollbar {{
+                width: 10px;
+                height: 10px;
+            }}
+            *::-webkit-scrollbar-track {{
+                background: rgba(168, 188, 212, 0.45);
+                border-radius: 8px;
+            }}
+            *::-webkit-scrollbar-thumb {{
+                background: rgba(42, 51, 68, 0.78);
+                border-radius: 8px;
+                border: 2px solid rgba(168, 188, 212, 0.45);
+            }}
+            *::-webkit-scrollbar-thumb:hover {{
+                background: rgba(42, 51, 68, 0.95);
             }}
         </style>
         """,

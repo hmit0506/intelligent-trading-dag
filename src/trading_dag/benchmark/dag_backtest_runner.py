@@ -57,7 +57,7 @@ def run_dag_backtest_experiment(
         model_temperature=_model_temp,
         initial_margin_requirement=config.margin_requirement,
         show_agent_graph=False,
-        show_reasoning=False,
+        show_reasoning=bool(getattr(config, "show_reasoning", False)),
         print_frequency=max(print_frequency, 1),
         use_progress_bar=use_progress_bar,
         log_file=None,

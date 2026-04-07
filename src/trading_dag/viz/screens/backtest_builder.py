@@ -26,6 +26,28 @@ RUN_LOG_AUTO_REFRESH_KEY = "std_backtest_run_log_auto_refresh"
 RUN_NOTICE_KEY = "std_backtest_run_notice"
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 TRACEBACK_BLOCK_RE = re.compile(r"Traceback \(most recent call last\):[\s\S]*?(?:KeyboardInterrupt|$)")
+PY_FATAL_BLOCK_RE = re.compile(r"object address\s*:[\s\S]*?lost sys\.stderr", re.IGNORECASE)
+REASONING_BLOCK_RE = re.compile(
+    r"={10,}\s*\n={5,}\s*.*?Agent\s*={5,}\s*\n[\s\S]*?\n={10,}",
+    re.IGNORECASE,
+)
+PROGRESS_RE = re.compile(
+    r"Backtesting:\s*(?:(?P<pct>\d{1,3})%\|[^\n]*?\|)?\s*(?P<done>\d+)\s*/\s*(?P<total>\d+)[^\n]*?"
+    r"Value=\$(?P<value>[+\-]?[\d,\.]+?)\s*,\s*Return=(?P<ret>[+\-]?[\d,\.]+)%",
+    re.IGNORECASE,
+)
+SNAPSHOT_BEFORE_BACKTESTING_RE = re.compile(r"\nBacktesting:\s", re.MULTILINE)
+PORTFOLIO_RE = re.compile(
+    r"Cash:\s*\$(?P<cash>[-\d,\.]+)\s*\|\s*Positions:\s*\$(?P<positions>[-\d,\.]+)\s*\|\s*"
+    r"Total:\s*\$(?P<total>[-\d,\.]+)\s*\|\s*Return[^\:]*:\s*(?P<total_return>[+\-]?[\d,\.]+)%",
+    re.IGNORECASE,
+)
+RISK_RE = re.compile(
+    r"Sharpe Ratio:\s*(?P<sharpe>(?:[+\-]?[\d,\.]+|N/?A))\s*\|\s*"
+    r"Sortino Ratio:\s*(?P<sortino>(?:[+\-]?[\d,\.]+|N/?A))\s*\|\s*"
+    r"Max Drawdown:\s*(?P<mdd>(?:[+\-]?[\d,\.]+|N/?A))%?",
+    re.IGNORECASE,
+)
 YAML_RW = YAML(typ="rt")
 YAML_RW.preserve_quotes = True
 YAML_RW.indent(mapping=2, sequence=4, offset=2)
@@ -117,12 +139,134 @@ def _read_log_tail(log_path: Path, max_lines: int = 120) -> str:
     return "\n".join(lines[-max_lines:])
 
 
+def _read_log_for_metrics(log_path: Path, max_chars: int = 1_000_000) -> str:
+    """Read a larger chunk for metrics extraction (independent of tail-lines UI)."""
+    if not log_path.is_file():
+        return ""
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    return text[-max_chars:]
+
+
 def _clean_terminal_output(text: str) -> str:
     return ANSI_ESCAPE_RE.sub("", text).replace("\r", "")
 
 
 def _clean_interruption_noise(text: str) -> str:
-    return TRACEBACK_BLOCK_RE.sub("[interrupted traceback omitted]\n", text)
+    cleaned = TRACEBACK_BLOCK_RE.sub("[interrupted traceback omitted]\n", text)
+    return PY_FATAL_BLOCK_RE.sub("[python fatal stderr block omitted]\n", cleaned)
+
+
+def _detect_failure_reason(log_text: str) -> str | None:
+    """Detect whether the run likely exited due to an exception."""
+    if "Traceback (most recent call last):" in log_text:
+        if "KeyboardInterrupt" in log_text:
+            return "KeyboardInterrupt"
+        return "Python exception"
+    if "lost sys.stderr" in log_text:
+        return "Python fatal stderr"
+    return None
+
+
+def _clean_reasoning_blocks(text: str) -> str:
+    """Hide giant agent reasoning JSON blocks from log view."""
+    return REASONING_BLOCK_RE.sub("[reasoning block omitted]\n", text)
+
+
+def _parse_float(raw: str) -> float | None:
+    try:
+        return float(raw.replace(",", "").strip().rstrip(","))
+    except Exception:
+        return None
+
+
+def _parse_float_or_na(raw: str) -> float | str | None:
+    token = raw.strip().upper()
+    if token in {"N/A", "NA"}:
+        return "N/A"
+    return _parse_float(raw)
+
+
+def _extract_live_metrics(log_text: str) -> dict[str, float | int | str]:
+    metrics: dict[str, float | int | str] = {}
+    progress_hits = list(PROGRESS_RE.finditer(log_text))
+    if progress_hits:
+        hit = progress_hits[-1]
+        done = int(hit.group("done"))
+        total = int(hit.group("total"))
+        pct_raw = hit.group("pct")
+        pct = int(pct_raw) if pct_raw is not None else (int(round((done / total) * 100.0)) if total > 0 else 0)
+        metrics["progress_pct"] = pct
+        metrics["progress_done"] = done
+        metrics["progress_total"] = total
+        value = _parse_float(hit.group("value"))
+        ret = _parse_float(hit.group("ret"))
+        if value is not None:
+            metrics["progress_value"] = value
+        if ret is not None:
+            metrics["progress_return_pct"] = ret
+
+    portfolio_hits = list(PORTFOLIO_RE.finditer(log_text))
+    if portfolio_hits:
+        hit = portfolio_hits[-1]
+        for key in ("cash", "positions", "total", "total_return"):
+            parsed = _parse_float(hit.group(key))
+            if parsed is not None:
+                metrics[f"portfolio_{key}"] = parsed
+
+    risk_hits = list(RISK_RE.finditer(log_text))
+    if risk_hits:
+        hit = risk_hits[-1]
+        for key in ("sharpe", "sortino", "mdd"):
+            parsed = _parse_float_or_na(hit.group(key))
+            if parsed is not None:
+                metrics[f"risk_{key}"] = parsed
+    return metrics
+
+
+def _extract_latest_portfolio_snapshot(log_text: str, max_lines: int = 56) -> str | None:
+    """Last PORTFOLIO SUMMARY block + decision table, up to the next tqdm line."""
+    marker = "PORTFOLIO SUMMARY:"
+    idx = log_text.rfind(marker)
+    if idx < 0:
+        return None
+    rest = log_text[idx:].lstrip()
+    m = SNAPSHOT_BEFORE_BACKTESTING_RE.search(rest)
+    if m:
+        rest = rest[: m.start()].rstrip()
+    lines = rest.splitlines()
+    if not lines:
+        return None
+    if len(lines) > max_lines:
+        rest = "\n".join(lines[:max_lines]) + "\n... (truncated for display; see full log tail below)"
+    else:
+        rest = "\n".join(lines)
+    return rest.strip()
+
+
+def _estimate_log_view_height(log_text: str, min_height: int = 260, max_height: int = 900) -> int:
+    """Estimate a readable log panel height from current tail length."""
+    line_count = max(1, len(log_text.splitlines()))
+    estimated = line_count * 18 + 32
+    return max(min_height, min(max_height, estimated))
+
+
+def _format_compact_currency(value: float | None) -> str:
+    if value is None:
+        return "—"
+    sign = "-" if value < 0 else ""
+    abs_value = abs(value)
+    if abs_value >= 1_000_000_000:
+        return f"{sign}${abs_value / 1_000_000_000:.2f}B"
+    if abs_value >= 1_000_000:
+        return f"{sign}${abs_value / 1_000_000:.2f}M"
+    if abs_value >= 1_000:
+        return f"{sign}${abs_value / 1_000:.2f}k"
+    return f"{sign}${abs_value:,.2f}"
 
 
 def _list_run_logs(log_dir: Path) -> list[Path]:
@@ -152,12 +296,15 @@ def _start_backtest_run(root: Path, cfg_path: Path) -> tuple[dict[str, Any] | No
     ]
     try:
         with log_path.open("w", encoding="utf-8") as log_file:
+            # Non-TTY stdout is block-buffered by default; force line-buffered prints into the log file.
+            run_env = {**os.environ, "PYTHONUNBUFFERED": "1"}
             process = subprocess.Popen(
                 cmd,
                 cwd=str(root),
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
+                env=run_env,
             )
     except Exception as exc:
         return None, str(exc)
@@ -492,8 +639,17 @@ def render(root: Path) -> None:
             pid = -1
         is_running = _is_pid_running(pid)
         if not is_running and run_state.get("finished_at") is None:
+            failure_reason = None
+            try:
+                state_log = Path(str(run_state.get("log_path", "")))
+                raw_log = _clean_terminal_output(_read_log_for_metrics(state_log))
+                failure_reason = _detect_failure_reason(raw_log)
+            except Exception:
+                failure_reason = None
             run_state["finished_at"] = time.time()
-            run_state["terminal_status"] = "finished"
+            run_state["terminal_status"] = "failed" if failure_reason else "finished"
+            if failure_reason and not bool(run_state.get("stop_requested", False)):
+                run_state["failure_reason"] = failure_reason
             st.session_state[RUN_STATE_KEY] = run_state
         if (
             not is_running
@@ -502,6 +658,9 @@ def render(root: Path) -> None:
         ):
             if bool(run_state.get("stop_requested", False)):
                 st.warning("Backtest run stopped.")
+            elif str(run_state.get("terminal_status", "")).lower() == "failed":
+                reason = str(run_state.get("failure_reason", "unknown error"))
+                st.error(f"Backtest run failed ({reason}). Check traceback in the log panel.")
             else:
                 st.success("Backtest run finished.")
             st.toast("Run status updated", icon="✅")
@@ -552,6 +711,8 @@ def render(root: Path) -> None:
         terminal_status = str(run_state.get("terminal_status", "")).lower()
         if terminal_status == "stopped":
             status = "Stopped"
+        elif terminal_status == "failed":
+            status = "Failed"
         elif terminal_status == "finished" or (not running_now and run_state.get("finished_at") is not None):
             status = "Finished"
         else:
@@ -590,15 +751,142 @@ def render(root: Path) -> None:
     tail_lines = st.slider(
         "Tail lines",
         min_value=40,
-        max_value=400,
-        value=120,
+        max_value=1200,
+        value=280,
         step=20,
         key="std_backtest_log_tail_lines",
     )
     log_text = _clean_terminal_output(_read_log_tail(selected, max_lines=int(tail_lines)))
-    if isinstance(run_state, dict) and bool(run_state.get("stop_requested", False)):
-        log_text = _clean_interruption_noise(log_text)
-    st.code(log_text, language="text")
+    hide_reasoning_blocks = st.checkbox(
+        "Optional: hide agent reasoning blocks in tail view (full reasoning stays in log file)",
+        value=False,
+        key="std_backtest_hide_reasoning_blocks",
+        help='When enabled, only the tail code block is shortened. Prefer "Latest portfolio snapshot" for trading tables.',
+    )
+    if hide_reasoning_blocks:
+        log_text = _clean_reasoning_blocks(log_text)
+
+    metrics_source = _clean_terminal_output(_read_log_for_metrics(selected))
+    live_metrics = _extract_live_metrics(metrics_source)
+    if live_metrics:
+        st.markdown(
+            '<div class="viz-panel-title"><span></span><span>Live run metrics</span></div>',
+            unsafe_allow_html=True,
+        )
+        progress_pct = live_metrics.get("progress_pct")
+        progress_done = live_metrics.get("progress_done")
+        progress_total = live_metrics.get("progress_total")
+        if isinstance(progress_pct, int):
+            bounded_pct = max(0, min(100, progress_pct))
+            progress_label = (
+                f"Backtesting progress: {bounded_pct}% ({int(progress_done)}/{int(progress_total)})"
+                if isinstance(progress_done, int) and isinstance(progress_total, int)
+                else f"Backtesting progress: {bounded_pct}%"
+            )
+            st.progress(bounded_pct, text=progress_label)
+
+        p1, p2, p3, p4 = st.columns(4)
+        if isinstance(progress_pct, int):
+            p1.metric(
+                "Progress",
+                f"{progress_pct}%",
+                delta=(
+                    f"{int(progress_done)}/{int(progress_total)}"
+                    if isinstance(progress_done, int) and isinstance(progress_total, int)
+                    else None
+                ),
+            )
+        else:
+            p1.metric("Progress", "—")
+        p2.metric(
+            "Live value",
+            _format_compact_currency(float(live_metrics["progress_value"])) if "progress_value" in live_metrics else "—",
+        )
+        p3.metric(
+            "Live return",
+            f"{float(live_metrics['progress_return_pct']):+.2f}%"
+            if "progress_return_pct" in live_metrics
+            else "—",
+        )
+        p4.metric(
+            "Portfolio total",
+            _format_compact_currency(float(live_metrics["portfolio_total"])) if "portfolio_total" in live_metrics else "—",
+        )
+
+        q1, q2, q3, q4 = st.columns(4)
+        q1.metric(
+            "Cash",
+            _format_compact_currency(float(live_metrics["portfolio_cash"])) if "portfolio_cash" in live_metrics else "—",
+        )
+        q2.metric(
+            "Positions",
+            _format_compact_currency(float(live_metrics["portfolio_positions"]))
+            if "portfolio_positions" in live_metrics
+            else "—",
+        )
+        q3.metric(
+            "Summary return",
+            f"{float(live_metrics['portfolio_total_return']):+.2f}%"
+            if "portfolio_total_return" in live_metrics
+            else "—",
+        )
+        q4.metric(
+            "Max drawdown",
+            (
+                f"{float(live_metrics['risk_mdd']):.2f}%"
+                if isinstance(live_metrics.get("risk_mdd"), float)
+                else str(live_metrics.get("risk_mdd", "—"))
+            ),
+        )
+
+        r1, r2 = st.columns(2)
+        r1.metric(
+            "Sharpe ratio",
+            (
+                f"{float(live_metrics['risk_sharpe']):+.2f}"
+                if isinstance(live_metrics.get("risk_sharpe"), float)
+                else str(live_metrics.get("risk_sharpe", "—"))
+            ),
+        )
+        r2.metric(
+            "Sortino ratio",
+            (
+                f"{float(live_metrics['risk_sortino']):+.2f}"
+                if isinstance(live_metrics.get("risk_sortino"), float)
+                else str(live_metrics.get("risk_sortino", "—"))
+            ),
+        )
+
+    portfolio_snapshot = _extract_latest_portfolio_snapshot(metrics_source)
+    snapshot_is_in_tail = bool(portfolio_snapshot and portfolio_snapshot in log_text)
+    if portfolio_snapshot and not snapshot_is_in_tail:
+        with st.expander("Latest portfolio snapshot (from full log)", expanded=True):
+            st.caption(
+                "Taken from the log: last PORTFOLIO SUMMARY through the decision table "
+                "(cut before the next Backtesting: line)."
+            )
+            st.code(portfolio_snapshot, language="text")
+    elif portfolio_snapshot and snapshot_is_in_tail:
+        st.caption("Latest portfolio snapshot is already visible in the current tail window.")
+
+    auto_height = st.checkbox(
+        "Auto-fit log window height",
+        value=True,
+        key="std_backtest_log_auto_height",
+        help="Use an adaptive panel height based on current tail length.",
+    )
+    manual_height = st.slider(
+        "Manual log height (px)",
+        min_value=220,
+        max_value=1200,
+        value=560,
+        step=20,
+        disabled=auto_height,
+        key="std_backtest_log_height_px",
+    )
+    log_height = _estimate_log_view_height(log_text) if auto_height else int(manual_height)
+    st.caption(f"Log panel height: {log_height}px")
+    st.code(log_text, language="text", height=log_height)
 
     auto_refresh = st.checkbox(
         "Live tail (auto refresh every 2s)",

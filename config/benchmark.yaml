@@ -11,7 +11,7 @@ main:
   start_date: '2026-03-09'
   end_date: '2026-03-13'
 
-  primary_interval: 1h
+  primary_interval: 30m
 
   margin_requirement: 0.0
 
@@ -27,7 +27,7 @@ main:
         long: 0.0
         short: 0.0
 
-  show_reasoning: false
+  show_reasoning: true
   show_agent_graph: true
 
   print_frequency: 1
@@ -64,7 +64,6 @@ main:
       - MacdStrategy
       - RSIStrategy
       - BollingerStrategy
-
   model:
     # Change based on your provider/API keys.
     name: "deepseek-chat"
@@ -79,13 +78,12 @@ phase1:
   # List comparison DAG runs only (reference full DAG is auto-prepended; do not list FullDAG).
   # [] = reference plus all single-strategy variants.
   dag_print_frequency: 1
-  dag_use_progress_bar: false
+  dag_use_progress_bar: true
 
   include_dag_experiments:
     - SingleMACD
     - SingleBollinger
     - SingleRSI
-
   export_individual_results: true
   export_charts: true
 
@@ -94,7 +92,7 @@ phase1:
 phase2:
   # [] = reference plus all ablations. Non-empty = only those Ablate_* names (FullDAG auto-prepended).
   # Ablation benchmark (full DAG vs removing one subsystem at a time).
-  dag_print_frequency: 999
+  dag_print_frequency: 1
   dag_use_progress_bar: true
   # Ablate_MultiInterval, Ablate_LLMPortfolio, Ablate_RiskSizing
   include_ablation_experiments: []
