@@ -937,6 +937,10 @@ def render(root: Path) -> None:
 
     if not log_files:
         st.caption("No streamlit run logs found yet. Start Phase 1 or Phase 2 above.")
+        if running_now:
+            st.caption("Auto-refreshing every 2s while run is active.")
+            time.sleep(2.0)
+            st.rerun()
     else:
         selected = st.selectbox(
             "Select log file",
@@ -1109,4 +1113,8 @@ def render(root: Path) -> None:
         log_height = estimate_log_view_height(log_text) if auto_height else int(manual_height)
         st.caption(f"Log panel height: {log_height}px")
         st.code(log_text, language="text", height=log_height)
+        if running_now:
+            st.caption("Auto-refreshing every 2s while run is active.")
+            time.sleep(2.0)
+            st.rerun()
 

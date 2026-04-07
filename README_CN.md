@@ -23,7 +23,7 @@
 - **进度跟踪**：实时进度条和可配置的输出频率
 - **文件管理**：在可配置的 `output_layout` 下对 **回测 / benchmark / 实盘** 子目录导出（CSV/JSON）并支持统一清理（见 [输出目录与文件](#输出目录与文件)）
 - **增强输出**：详细的投资组合信息、决策历史和性能指标
-- **Streamlit 实验室**：`src/trading_dag/viz/` 下浏览器看板，包含 `Setup & API`、`Benchmark Builder`、`Backtest Builder`、`Live Builder` 页面，支持本地 `.env` 配置、YAML 编辑、页内运行/停止、刷新后状态恢复与单日志面板查看
+- **Streamlit 实验室**：`src/trading_dag/viz/` 下浏览器看板，包含 `Setup & API`、`Benchmark Builder`、`Backtest Builder`、`Live Builder` 页面，支持本地 `.env`、YAML 编辑、**始终可用的 Stop**（含按配置清理孤儿 benchmark CLI）、侧边栏 **Emergency** 一键结束本地 `trading_dag.cli.*` 进程、回测/benchmark 运行状态持久化，以及**运行中每 2 秒自动刷新**的单面板日志
 
 ## 架构
 
@@ -322,11 +322,13 @@ uv run streamlit run src/trading_dag/viz/streamlit_app.py
 该应用新增页面说明：
 
 - **Setup & API**：管理本地 `.env` 密钥（如 `BINANCE_API_KEY`、`OPENAI_API_KEY`），并提供 Binance 连通性测试和 LLM 客户端初始化测试。
-- **Benchmark Builder**：编辑 `config/benchmark.yaml`，页内运行 phase1/phase2，支持停止；日志为单一滚动面板，并在需要时固定显示最新组合摘要/推理上下文。
-- **Backtest Builder**：编辑 `config/config.yaml`，页内运行标准回测，支持停止；日志展示方式与 Benchmark Builder 一致。
-- **Live Builder**：编辑 `config/config.yaml`，页内运行实盘模式，支持停止；日志面板同样为固定高度可滚动样式。
+- **Benchmark Builder**：编辑 `config/benchmark.yaml`，页内运行 phase1/phase2；**Stop** 始终可用，并可清理与该配置匹配的 benchmark CLI 孤儿进程；**运行活跃时日志约每 2 秒自动刷新**；单一滚动日志面板，需要时固定最新组合摘要/推理上下文。
+- **Backtest Builder**：编辑 `config/config.yaml`，页内标准回测；与上相同的 **Stop** 与 **2 秒日志刷新**；日志样式与 Benchmark Builder 一致。
+- **Live Builder**：编辑 `config/config.yaml`，页内实盘；与上相同的 **Stop** 与 **2 秒日志刷新**；固定高度可滚动日志面板。
 
-另外，backtest/benchmark 的运行状态会持久化到磁盘，页面刷新后可恢复运行状态与停止按钮可用性。
+侧边栏提供 **Emergency: stop background CLI runs**，对本机匹配 `trading_dag.cli.*` 的进程发送终止信号（范围较宽，可能影响其他终端）。成功执行后，若可关联到 UI 中的运行记录，会将状态记为 **Stopped** 而非 **Finished**。
+
+backtest/benchmark 的运行状态持久化到磁盘，刷新后可恢复。**Stop** 在短暂丢失子进程 PID 时仍可对当前页面对应配置发出停止信号。
 
 ### Phase 1 基准：原理与实现要点
 

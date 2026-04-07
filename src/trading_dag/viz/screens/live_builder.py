@@ -651,6 +651,10 @@ def render(root: Path) -> None:
 
     if not log_files:
         st.caption("No streamlit live logs found yet. Start a run above.")
+        if running_now:
+            st.caption("Auto-refreshing every 2s while run is active.")
+            time.sleep(2.0)
+            st.rerun()
         return
 
     selected = st.selectbox(
@@ -687,3 +691,7 @@ def render(root: Path) -> None:
     log_height = _estimate_log_view_height(log_text) if auto_height else int(manual_height)
     st.caption(f"Log panel height: {log_height}px")
     st.code(log_text, language="text", height=log_height)
+    if running_now:
+        st.caption("Auto-refreshing every 2s while run is active.")
+        time.sleep(2.0)
+        st.rerun()
