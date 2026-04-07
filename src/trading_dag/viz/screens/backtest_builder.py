@@ -6,6 +6,7 @@ import re
 import signal
 import subprocess
 import time
+import json
 from io import StringIO
 from datetime import date, datetime
 from pathlib import Path
@@ -23,8 +24,9 @@ DEFAULT_PROVIDERS = ["openai", "groq", "anthropic", "google", "ollama", "openrou
 DEFAULT_STRATEGIES = ["MacdStrategy", "RSIStrategy", "BollingerStrategy"]
 DEFAULT_RESPONSE_FORMATS = ["json"]
 RUN_STATE_KEY = "viz_std_backtest_run_state"
-RUN_LOG_AUTO_REFRESH_KEY = "std_backtest_run_log_auto_refresh"
 RUN_NOTICE_KEY = "std_backtest_run_notice"
+RUN_STATE_FILE_NAME = "backtest_streamlit_state.json"
+RUN_STATE_RECOVERED_NOTICE_KEY = "std_backtest_run_state_recovered_notice"
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 PROGRESS_RE = re.compile(
     r"Backtesting:\s*(?:(?P<pct>\d{1,3})%\|[^\n]*?\|)?\s*(?P<done>\d+)\s*/\s*(?P<total>\d+)[^\n]*?"
@@ -234,6 +236,31 @@ def _list_run_logs(log_dir: Path) -> list[Path]:
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
+
+
+def _run_state_file(root: Path) -> Path:
+    return (root / "output" / "backtest" / RUN_STATE_FILE_NAME).resolve()
+
+
+def _persist_run_state(root: Path, state: dict[str, Any] | None) -> None:
+    path = _run_state_file(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if state is None:
+        if path.is_file():
+            path.unlink()
+        return
+    path.write_text(json.dumps(state, ensure_ascii=True, indent=2), encoding="utf-8")
+
+
+def _load_persisted_run_state(root: Path) -> dict[str, Any] | None:
+    path = _run_state_file(root)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def _start_backtest_run(root: Path, cfg_path: Path) -> tuple[dict[str, Any] | None, str | None]:
@@ -588,6 +615,14 @@ def render(root: Path) -> None:
     st.caption("Runs `python -m trading_dag.cli.backtest` in background and streams output below.")
 
     run_state = st.session_state.get(RUN_STATE_KEY)
+    if not isinstance(run_state, dict):
+        persisted = _load_persisted_run_state(root)
+        if isinstance(persisted, dict):
+            st.session_state[RUN_STATE_KEY] = persisted
+            st.session_state[RUN_STATE_RECOVERED_NOTICE_KEY] = True
+            run_state = persisted
+    if bool(st.session_state.pop(RUN_STATE_RECOVERED_NOTICE_KEY, False)):
+        st.info("Recovered run state from disk. Status and controls were restored after refresh.")
     is_running = False
     if isinstance(run_state, dict):
         try:
@@ -608,6 +643,7 @@ def render(root: Path) -> None:
             if failure_reason and not bool(run_state.get("stop_requested", False)):
                 run_state["failure_reason"] = failure_reason
             st.session_state[RUN_STATE_KEY] = run_state
+            _persist_run_state(root, run_state)
         if (
             not is_running
             and run_state.get("finished_at") is not None
@@ -623,6 +659,7 @@ def render(root: Path) -> None:
             st.toast("Run status updated", icon="✅")
             run_state["notified_finished"] = True
             st.session_state[RUN_STATE_KEY] = run_state
+            _persist_run_state(root, run_state)
 
     c_run, c_stop = st.columns(2)
     with c_run:
@@ -636,13 +673,14 @@ def render(root: Path) -> None:
             st.error(f"Could not start backtest run: {start_err}")
         else:
             st.session_state[RUN_STATE_KEY] = new_state
+            _persist_run_state(root, new_state)
             st.success(f"Started backtest run (PID {new_state['pid']}).")
             st.rerun()
 
     if stop_clicked and isinstance(run_state, dict):
         run_state["stop_requested"] = True
         st.session_state[RUN_STATE_KEY] = run_state
-        st.session_state[RUN_LOG_AUTO_REFRESH_KEY] = False
+        _persist_run_state(root, run_state)
         stop_err = _stop_run(run_state)
         if stop_err:
             st.warning(f"Could not stop run: {stop_err}")
@@ -651,6 +689,7 @@ def render(root: Path) -> None:
             run_state["terminal_status"] = "stopped"
             run_state["notified_finished"] = True
             st.session_state[RUN_STATE_KEY] = run_state
+            _persist_run_state(root, run_state)
             st.session_state[RUN_NOTICE_KEY] = "Backtest run stopped."
         st.rerun()
 
@@ -814,17 +853,7 @@ def render(root: Path) -> None:
             ),
         )
 
-    include_live_tail = st.checkbox(
-        "Include live tail in log viewer",
-        value=True,
-        key="std_backtest_include_live_tail",
-        help="Turn off to focus on latest summary and portfolio reasoning only.",
-    )
-    log_text = prepend_latest_snapshot_to_tail(
-        log_text,
-        metrics_source,
-        include_live_tail=include_live_tail,
-    )
+    log_text = prepend_latest_snapshot_to_tail(log_text, metrics_source)
 
     auto_height = st.checkbox(
         "Auto-fit log window height",
@@ -843,29 +872,4 @@ def render(root: Path) -> None:
     )
     log_height = estimate_log_view_height(log_text) if auto_height else int(manual_height)
     st.caption(f"Log panel height: {log_height}px")
-    wrap_long_lines = st.checkbox(
-        "Wrap long lines in log viewer",
-        value=True,
-        key="std_backtest_wrap_long_lines",
-        help="Prevents long reasoning lines from forcing horizontal scrolling.",
-    )
-    if wrap_long_lines:
-        st.text_area(
-            "Run log (wrapped)",
-            value=log_text,
-            height=log_height,
-            disabled=True,
-            key="std_backtest_wrapped_log_view",
-        )
-    else:
-        st.code(log_text, language="text", height=log_height)
-
-    auto_refresh = st.checkbox(
-        "Live tail (auto refresh every 2s)",
-        value=bool(st.session_state.get(RUN_LOG_AUTO_REFRESH_KEY, True)),
-        key=RUN_LOG_AUTO_REFRESH_KEY,
-    )
-    if auto_refresh and running_now:
-        st.caption("Live tail is on. Refreshing logs every 2 seconds...")
-        time.sleep(2)
-        st.rerun()
+    st.code(log_text, language="text", height=log_height)

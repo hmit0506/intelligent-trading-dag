@@ -210,6 +210,25 @@ def inject_theme_css() -> None:
                 color: var(--viz-text) !important;
                 -webkit-text-fill-color: var(--viz-text) !important;
             }}
+            /* Dropdown headings / group titles / helper rows. */
+            [data-baseweb="menu"] h1,
+            [data-baseweb="menu"] h2,
+            [data-baseweb="menu"] h3,
+            [data-baseweb="menu"] h4,
+            [data-baseweb="menu"] h5,
+            [data-baseweb="menu"] h6,
+            [data-baseweb="menu"] strong,
+            [data-baseweb="menu"] small,
+            [data-baseweb="menu"] label,
+            [data-baseweb="menu"] [role="heading"],
+            [data-baseweb="menu"] [data-disabled],
+            [data-baseweb="menu"] [aria-disabled],
+            [data-baseweb="menu"] [aria-disabled="true"] {{
+                color: var(--viz-text) !important;
+                -webkit-text-fill-color: var(--viz-text) !important;
+                background-color: var(--viz-surface-card) !important;
+                opacity: 1 !important;
+            }}
             [data-testid="stMetricValue"] {{ color: var(--viz-accent) !important; }}
             [data-testid="stMarkdownContainer"] a {{ color: var(--viz-accent); }}
             div[data-baseweb="tab-list"] button {{
@@ -305,6 +324,20 @@ def inject_theme_css() -> None:
             [data-testid="stDataFrame"] * {{
                 color: var(--viz-text) !important;
             }}
+            /* Streamlit dataframe/grid internals (header/body/filter cells). */
+            [data-testid="stDataFrame"] [role="grid"],
+            [data-testid="stDataFrame"] [role="grid"] * {{
+                color: var(--viz-text) !important;
+                -webkit-text-fill-color: var(--viz-text) !important;
+                border-color: var(--viz-surface-alt) !important;
+            }}
+            [data-testid="stDataFrame"] [role="columnheader"],
+            [data-testid="stDataFrame"] [role="gridcell"],
+            [data-testid="stDataFrame"] [role="rowheader"],
+            [data-testid="stDataFrame"] [data-testid="stDataFrameResizableHeader"] {{
+                background-color: var(--viz-surface-card) !important;
+                color: var(--viz-text) !important;
+            }}
             [data-testid="stPlotlyChart"] {{
                 border: 1px solid var(--viz-surface-alt);
                 border-radius: var(--viz-radius);
@@ -350,6 +383,63 @@ def inject_theme_css() -> None:
             [data-testid="stJson"] pre {{
                 color: var(--viz-text) !important;
                 -webkit-text-fill-color: var(--viz-text) !important;
+            }}
+            /* Code/JSON toolbar controls (copy/search/view) stay visible on light panels. */
+            [data-testid="stCodeBlock"] button,
+            [data-testid="stCode"] button,
+            [data-testid="stJson"] button {{
+                background: rgba(245, 248, 253, 0.95) !important;
+                border: 1px solid var(--viz-surface-alt) !important;
+                color: var(--viz-text) !important;
+            }}
+            [data-testid="stCodeBlock"] button:hover,
+            [data-testid="stCode"] button:hover,
+            [data-testid="stJson"] button:hover {{
+                background: rgba(200, 220, 242, 0.9) !important;
+                border-color: rgba(28, 34, 48, 0.28) !important;
+            }}
+            [data-testid="stCodeBlock"] button,
+            [data-testid="stCodeBlock"] [role="button"],
+            [data-testid="stCode"] button,
+            [data-testid="stCode"] [role="button"],
+            [data-testid="stJson"] button,
+            [data-testid="stJson"] [role="button"] {{
+                filter: none !important;
+                mix-blend-mode: normal !important;
+                -webkit-backdrop-filter: none !important;
+                backdrop-filter: none !important;
+            }}
+            /* Explicit copy-button selectors across Streamlit versions. */
+            [data-testid="stCodeBlock"] button[aria-label*="Copy"],
+            [data-testid="stCode"] button[aria-label*="Copy"],
+            [data-testid="stCodeBlock"] button[title*="Copy"],
+            [data-testid="stCode"] button[title*="Copy"],
+            [data-testid="stCodeBlock"] [data-testid*="copy"],
+            [data-testid="stCode"] [data-testid*="copy"] {{
+                background: #eaf1fb !important;
+                border: 1px solid rgba(28, 34, 48, 0.45) !important;
+                color: var(--viz-text) !important;
+                opacity: 1 !important;
+                box-shadow: 0 1px 2px rgba(28, 34, 48, 0.12) !important;
+            }}
+            [data-testid="stCodeBlock"] button[aria-label*="Copy"] svg,
+            [data-testid="stCode"] button[aria-label*="Copy"] svg,
+            [data-testid="stCodeBlock"] button[title*="Copy"] svg,
+            [data-testid="stCode"] button[title*="Copy"] svg,
+            [data-testid="stCodeBlock"] [data-testid*="copy"] svg,
+            [data-testid="stCode"] [data-testid*="copy"] svg {{
+                color: var(--viz-text) !important;
+            }}
+            /* Tooltip readability (e.g., "Copied"). */
+            [data-baseweb="tooltip"],
+            [data-baseweb="tooltip"] *,
+            [role="tooltip"],
+            [role="tooltip"] * {{
+                background: rgba(234, 241, 251, 0.98) !important;
+                color: var(--viz-text) !important;
+                -webkit-text-fill-color: var(--viz-text) !important;
+                border-color: rgba(28, 34, 48, 0.35) !important;
+                opacity: 1 !important;
             }}
             [data-testid="stJson"] *,
             [data-testid="stText"] *,
@@ -401,6 +491,22 @@ def inject_theme_css() -> None:
             [data-baseweb="select"] [role="combobox"] * {{
                 color: var(--viz-text) !important;
                 -webkit-text-fill-color: var(--viz-text) !important;
+            }}
+            /* MultiSelect selected chips: blue background with white text/icon. */
+            [data-baseweb="tag"] {{
+                background-color: var(--viz-accent) !important;
+                border: 1px solid var(--viz-accent) !important;
+            }}
+            [data-baseweb="tag"] *,
+            [data-baseweb="tag"] span,
+            [data-baseweb="tag"] div {{
+                color: #ffffff !important;
+                -webkit-text-fill-color: #ffffff !important;
+            }}
+            [data-baseweb="tag"] svg,
+            [data-baseweb="tag"] svg path {{
+                fill: #ffffff !important;
+                stroke: #ffffff !important;
             }}
             /* NumberInput stepper (+/-): keep strong foreground contrast. */
             [data-testid="stNumberInput"] button {{

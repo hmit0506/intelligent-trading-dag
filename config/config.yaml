@@ -32,7 +32,7 @@ initial_positions:
       short: 0.0  # Short position quantity
 
 # Display options
-show_reasoning: true   # Show LLM reasoning process
+show_reasoning: false  # Show LLM reasoning process
 show_agent_graph: true  # Generate and save workflow graph
 
 # Performance and output options

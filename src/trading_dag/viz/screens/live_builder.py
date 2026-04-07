@@ -22,7 +22,6 @@ DEFAULT_PROVIDERS = ["openai", "groq", "anthropic", "google", "ollama", "openrou
 DEFAULT_STRATEGIES = ["MacdStrategy", "RSIStrategy", "BollingerStrategy"]
 DEFAULT_RESPONSE_FORMATS = ["json"]
 RUN_STATE_KEY = "viz_std_live_run_state"
-RUN_LOG_AUTO_REFRESH_KEY = "std_live_run_log_auto_refresh"
 RUN_NOTICE_KEY = "std_live_run_notice"
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 YAML_RW = YAML(typ="rt")
@@ -114,6 +113,13 @@ def _read_log_tail(log_path: Path, max_lines: int = 120) -> str:
     if not lines:
         return "(no output yet)"
     return "\n".join(lines[-max_lines:])
+
+
+def _estimate_log_view_height(log_text: str, min_height: int = 260, max_height: int = 900) -> int:
+    """Estimate a readable log panel height from current tail length."""
+    line_count = max(1, len(log_text.splitlines()))
+    estimated = line_count * 18 + 32
+    return max(min_height, min(max_height, estimated))
 
 
 def _read_log_for_metrics(log_path: Path, max_chars: int = 1_000_000) -> str:
@@ -560,7 +566,6 @@ def render(root: Path) -> None:
     if stop_clicked and isinstance(run_state, dict):
         run_state["stop_requested"] = True
         st.session_state[RUN_STATE_KEY] = run_state
-        st.session_state[RUN_LOG_AUTO_REFRESH_KEY] = False
         stop_err = _stop_run(run_state)
         if stop_err:
             st.warning(f"Could not stop run: {stop_err}")
@@ -626,20 +631,27 @@ def render(root: Path) -> None:
     tail_lines = st.slider(
         "Tail lines",
         min_value=40,
-        max_value=400,
-        value=120,
+        max_value=1200,
+        value=280,
         step=20,
         key="std_live_log_tail_lines",
     )
     log_text = _clean_terminal_output(_read_log_tail(selected, max_lines=int(tail_lines)))
-    st.code(log_text, language="text")
-
-    auto_refresh = st.checkbox(
-        "Live tail (auto refresh every 2s)",
-        value=bool(st.session_state.get(RUN_LOG_AUTO_REFRESH_KEY, True)),
-        key=RUN_LOG_AUTO_REFRESH_KEY,
+    auto_height = st.checkbox(
+        "Auto-fit log window height",
+        value=True,
+        key="std_live_log_auto_height",
+        help="Use an adaptive panel height based on current tail length.",
     )
-    if auto_refresh and running_now:
-        st.caption("Live tail is on. Refreshing logs every 2 seconds...")
-        time.sleep(2)
-        st.rerun()
+    manual_height = st.slider(
+        "Manual log height (px)",
+        min_value=220,
+        max_value=1200,
+        value=520,
+        step=20,
+        disabled=auto_height,
+        key="std_live_log_height_px",
+    )
+    log_height = _estimate_log_view_height(log_text) if auto_height else int(manual_height)
+    st.caption(f"Log panel height: {log_height}px")
+    st.code(log_text, language="text", height=log_height)

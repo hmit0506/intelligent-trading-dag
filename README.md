@@ -23,7 +23,7 @@ This system employs LangGraph to create a flexible workflow where market data fl
 - **Progress Tracking**: Real-time progress bars and configurable output frequency for backtests
 - **File Management**: Exports (CSV/JSON) and cleanup across **backtest / benchmark / live** subfolders under configurable `output_layout` (see [Output layout](#output-layout-and-files))
 - **Enhanced Output**: Detailed portfolio information, decision history, and performance metrics
-- **Streamlit lab UI**: Browser dashboard under `src/trading_dag/viz/` with dedicated `Benchmark Builder`, `Backtest Builder`, and `Live Builder` pages to edit YAML config, run jobs in-page, stop tasks, and monitor live logs
+- **Streamlit lab UI**: Browser dashboard under `src/trading_dag/viz/` with dedicated `Setup & API`, `Benchmark Builder`, `Backtest Builder`, and `Live Builder` pages for local `.env` setup, YAML editing, in-page run/stop, persisted run-state recovery, and single-panel log viewing
 
 ## Architecture
 
@@ -329,11 +329,12 @@ uv run python -m trading_dag.cli.benchmark_phase2 --config config/benchmark.yaml
 uv run streamlit run src/trading_dag/viz/streamlit_app.py
 ```
 
-The app now includes three run-control pages:
+The app now includes four configuration/run pages:
 
-- **Benchmark Builder** — edits `config/benchmark.yaml`, runs phase 1/2 benchmarks, supports stop + live log tail.
-- **Backtest Builder** — edits `config/config.yaml`, runs standard backtest in-page, supports stop + live log tail.
-- **Live Builder** — edits `config/config.yaml`, runs live mode in-page, supports stop + live log tail.
+- **Setup & API** — edits local `.env` keys used by the app (`BINANCE_API_KEY`, `OPENAI_API_KEY`, etc.), includes Binance connectivity test and LLM client initialization test.
+- **Benchmark Builder** — edits `config/benchmark.yaml`, runs phase 1/2 benchmarks, supports stop and a single scrollable log panel with pinned latest portfolio snapshot/reasoning context.
+- **Backtest Builder** — edits `config/config.yaml`, runs standard backtest in-page, supports stop and a single scrollable log panel with pinned latest portfolio snapshot/reasoning context.
+- **Live Builder** — edits `config/config.yaml`, runs live mode in-page, supports stop and the same fixed-height scrollable log panel style.
 
 Mode conflicts are avoided by runtime overrides:
 
@@ -343,6 +344,7 @@ Mode conflicts are avoided by runtime overrides:
 These overrides apply at run time and do not require changing `config.yaml`'s persisted `mode` value.
 
 The sidebar output root is fixed to `config/config.yaml -> output_layout.root` for deterministic behavior.
+Run status is persisted to disk for backtest/benchmark pages, so refreshes can recover active process state and keep stop controls available.
 
 ### Phase 1 benchmark — methodology and internals
 

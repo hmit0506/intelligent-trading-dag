@@ -23,7 +23,7 @@
 - **进度跟踪**：实时进度条和可配置的输出频率
 - **文件管理**：在可配置的 `output_layout` 下对 **回测 / benchmark / 实盘** 子目录导出（CSV/JSON）并支持统一清理（见 [输出目录与文件](#输出目录与文件)）
 - **增强输出**：详细的投资组合信息、决策历史和性能指标
-- **Streamlit 实验室**：`src/trading_dag/viz/` 下浏览器看板，浏览 `output/` 等目录中的基准 CSV、Plotly 权益曲线与 PNG（`uv sync` 后默认已安装 streamlit/plotly）
+- **Streamlit 实验室**：`src/trading_dag/viz/` 下浏览器看板，包含 `Setup & API`、`Benchmark Builder`、`Backtest Builder`、`Live Builder` 页面，支持本地 `.env` 配置、YAML 编辑、页内运行/停止、刷新后状态恢复与单日志面板查看
 
 ## 架构
 
@@ -313,13 +313,20 @@ python run.py --benchmark-phase2
 uv run python -m trading_dag.cli.benchmark_phase2 --config config/benchmark.yaml
 ```
 
-5. **本地实验室（Streamlit）** — 浏览 `output/` 下的 CSV / PNG / JSON（`uv sync` 后无需额外 `--extra`）：
+5. **本地实验室（Streamlit）** — 在浏览器中配置并运行（`uv sync` 后无需额外 `--extra`）：
 
 ```bash
 uv run streamlit run src/trading_dag/viz/streamlit_app.py
 ```
 
-在侧栏 **Output directory** 指向你的 `output/`（或任意含基准导出文件的目录）。该应用对交易为只读：不执行回测、不报单。
+该应用新增页面说明：
+
+- **Setup & API**：管理本地 `.env` 密钥（如 `BINANCE_API_KEY`、`OPENAI_API_KEY`），并提供 Binance 连通性测试和 LLM 客户端初始化测试。
+- **Benchmark Builder**：编辑 `config/benchmark.yaml`，页内运行 phase1/phase2，支持停止；日志为单一滚动面板，并在需要时固定显示最新组合摘要/推理上下文。
+- **Backtest Builder**：编辑 `config/config.yaml`，页内运行标准回测，支持停止；日志展示方式与 Benchmark Builder 一致。
+- **Live Builder**：编辑 `config/config.yaml`，页内运行实盘模式，支持停止；日志面板同样为固定高度可滚动样式。
+
+另外，backtest/benchmark 的运行状态会持久化到磁盘，页面刷新后可恢复运行状态与停止按钮可用性。
 
 ### Phase 1 基准：原理与实现要点
 
