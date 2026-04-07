@@ -15,6 +15,7 @@ import streamlit as st
 from ruamel.yaml import YAML
 
 from trading_dag.viz.helpers import _page_header
+from trading_dag.viz.log_view import clean_reasoning_blocks, estimate_log_view_height, prepend_latest_snapshot_to_tail
 
 CONFIG_PATH_REL = Path("config/config.yaml")
 DEFAULT_INTERVAL_OPTIONS = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
@@ -25,18 +26,11 @@ RUN_STATE_KEY = "viz_std_backtest_run_state"
 RUN_LOG_AUTO_REFRESH_KEY = "std_backtest_run_log_auto_refresh"
 RUN_NOTICE_KEY = "std_backtest_run_notice"
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
-TRACEBACK_BLOCK_RE = re.compile(r"Traceback \(most recent call last\):[\s\S]*?(?:KeyboardInterrupt|$)")
-PY_FATAL_BLOCK_RE = re.compile(r"object address\s*:[\s\S]*?lost sys\.stderr", re.IGNORECASE)
-REASONING_BLOCK_RE = re.compile(
-    r"={10,}\s*\n={5,}\s*.*?Agent\s*={5,}\s*\n[\s\S]*?\n={10,}",
-    re.IGNORECASE,
-)
 PROGRESS_RE = re.compile(
     r"Backtesting:\s*(?:(?P<pct>\d{1,3})%\|[^\n]*?\|)?\s*(?P<done>\d+)\s*/\s*(?P<total>\d+)[^\n]*?"
     r"Value=\$(?P<value>[+\-]?[\d,\.]+?)\s*,\s*Return=(?P<ret>[+\-]?[\d,\.]+)%",
     re.IGNORECASE,
 )
-SNAPSHOT_BEFORE_BACKTESTING_RE = re.compile(r"\nBacktesting:\s", re.MULTILINE)
 PORTFOLIO_RE = re.compile(
     r"Cash:\s*\$(?P<cash>[-\d,\.]+)\s*\|\s*Positions:\s*\$(?P<positions>[-\d,\.]+)\s*\|\s*"
     r"Total:\s*\$(?P<total>[-\d,\.]+)\s*\|\s*Return[^\:]*:\s*(?P<total_return>[+\-]?[\d,\.]+)%",
@@ -156,11 +150,6 @@ def _clean_terminal_output(text: str) -> str:
     return ANSI_ESCAPE_RE.sub("", text).replace("\r", "")
 
 
-def _clean_interruption_noise(text: str) -> str:
-    cleaned = TRACEBACK_BLOCK_RE.sub("[interrupted traceback omitted]\n", text)
-    return PY_FATAL_BLOCK_RE.sub("[python fatal stderr block omitted]\n", cleaned)
-
-
 def _detect_failure_reason(log_text: str) -> str | None:
     """Detect whether the run likely exited due to an exception."""
     if "Traceback (most recent call last):" in log_text:
@@ -170,11 +159,6 @@ def _detect_failure_reason(log_text: str) -> str | None:
     if "lost sys.stderr" in log_text:
         return "Python fatal stderr"
     return None
-
-
-def _clean_reasoning_blocks(text: str) -> str:
-    """Hide giant agent reasoning JSON blocks from log view."""
-    return REASONING_BLOCK_RE.sub("[reasoning block omitted]\n", text)
 
 
 def _parse_float(raw: str) -> float | None:
@@ -226,33 +210,6 @@ def _extract_live_metrics(log_text: str) -> dict[str, float | int | str]:
             if parsed is not None:
                 metrics[f"risk_{key}"] = parsed
     return metrics
-
-
-def _extract_latest_portfolio_snapshot(log_text: str, max_lines: int = 56) -> str | None:
-    """Last PORTFOLIO SUMMARY block + decision table, up to the next tqdm line."""
-    marker = "PORTFOLIO SUMMARY:"
-    idx = log_text.rfind(marker)
-    if idx < 0:
-        return None
-    rest = log_text[idx:].lstrip()
-    m = SNAPSHOT_BEFORE_BACKTESTING_RE.search(rest)
-    if m:
-        rest = rest[: m.start()].rstrip()
-    lines = rest.splitlines()
-    if not lines:
-        return None
-    if len(lines) > max_lines:
-        rest = "\n".join(lines[:max_lines]) + "\n... (truncated for display; see full log tail below)"
-    else:
-        rest = "\n".join(lines)
-    return rest.strip()
-
-
-def _estimate_log_view_height(log_text: str, min_height: int = 260, max_height: int = 900) -> int:
-    """Estimate a readable log panel height from current tail length."""
-    line_count = max(1, len(log_text.splitlines()))
-    estimated = line_count * 18 + 32
-    return max(min_height, min(max_height, estimated))
 
 
 def _format_compact_currency(value: float | None) -> str:
@@ -761,10 +718,10 @@ def render(root: Path) -> None:
         "Optional: hide agent reasoning blocks in tail view (full reasoning stays in log file)",
         value=False,
         key="std_backtest_hide_reasoning_blocks",
-        help='When enabled, only the tail code block is shortened. Prefer "Latest portfolio snapshot" for trading tables.',
+        help="When enabled, only the tail window is shortened; latest portfolio snapshot is still pinned when missing from tail.",
     )
     if hide_reasoning_blocks:
-        log_text = _clean_reasoning_blocks(log_text)
+        log_text = clean_reasoning_blocks(log_text)
 
     metrics_source = _clean_terminal_output(_read_log_for_metrics(selected))
     live_metrics = _extract_live_metrics(metrics_source)
@@ -857,17 +814,17 @@ def render(root: Path) -> None:
             ),
         )
 
-    portfolio_snapshot = _extract_latest_portfolio_snapshot(metrics_source)
-    snapshot_is_in_tail = bool(portfolio_snapshot and portfolio_snapshot in log_text)
-    if portfolio_snapshot and not snapshot_is_in_tail:
-        with st.expander("Latest portfolio snapshot (from full log)", expanded=True):
-            st.caption(
-                "Taken from the log: last PORTFOLIO SUMMARY through the decision table "
-                "(cut before the next Backtesting: line)."
-            )
-            st.code(portfolio_snapshot, language="text")
-    elif portfolio_snapshot and snapshot_is_in_tail:
-        st.caption("Latest portfolio snapshot is already visible in the current tail window.")
+    include_live_tail = st.checkbox(
+        "Include live tail in log viewer",
+        value=True,
+        key="std_backtest_include_live_tail",
+        help="Turn off to focus on latest summary and portfolio reasoning only.",
+    )
+    log_text = prepend_latest_snapshot_to_tail(
+        log_text,
+        metrics_source,
+        include_live_tail=include_live_tail,
+    )
 
     auto_height = st.checkbox(
         "Auto-fit log window height",
@@ -884,9 +841,24 @@ def render(root: Path) -> None:
         disabled=auto_height,
         key="std_backtest_log_height_px",
     )
-    log_height = _estimate_log_view_height(log_text) if auto_height else int(manual_height)
+    log_height = estimate_log_view_height(log_text) if auto_height else int(manual_height)
     st.caption(f"Log panel height: {log_height}px")
-    st.code(log_text, language="text", height=log_height)
+    wrap_long_lines = st.checkbox(
+        "Wrap long lines in log viewer",
+        value=True,
+        key="std_backtest_wrap_long_lines",
+        help="Prevents long reasoning lines from forcing horizontal scrolling.",
+    )
+    if wrap_long_lines:
+        st.text_area(
+            "Run log (wrapped)",
+            value=log_text,
+            height=log_height,
+            disabled=True,
+            key="std_backtest_wrapped_log_view",
+        )
+    else:
+        st.code(log_text, language="text", height=log_height)
 
     auto_refresh = st.checkbox(
         "Live tail (auto refresh every 2s)",

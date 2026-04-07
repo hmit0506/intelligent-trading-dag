@@ -25,8 +25,6 @@ RUN_STATE_KEY = "viz_std_live_run_state"
 RUN_LOG_AUTO_REFRESH_KEY = "std_live_run_log_auto_refresh"
 RUN_NOTICE_KEY = "std_live_run_notice"
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
-TRACEBACK_BLOCK_RE = re.compile(r"Traceback \(most recent call last\):[\s\S]*?(?:KeyboardInterrupt|$)")
-PY_FATAL_BLOCK_RE = re.compile(r"object address\s*:[\s\S]*?lost sys\.stderr", re.IGNORECASE)
 YAML_RW = YAML(typ="rt")
 YAML_RW.preserve_quotes = True
 YAML_RW.indent(mapping=2, sequence=4, offset=2)
@@ -118,13 +116,31 @@ def _read_log_tail(log_path: Path, max_lines: int = 120) -> str:
     return "\n".join(lines[-max_lines:])
 
 
+def _read_log_for_metrics(log_path: Path, max_chars: int = 1_000_000) -> str:
+    if not log_path.is_file():
+        return ""
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    return text[-max_chars:]
+
+
 def _clean_terminal_output(text: str) -> str:
     return ANSI_ESCAPE_RE.sub("", text).replace("\r", "")
 
 
-def _clean_interruption_noise(text: str) -> str:
-    cleaned = TRACEBACK_BLOCK_RE.sub("[interrupted traceback omitted]\n", text)
-    return PY_FATAL_BLOCK_RE.sub("[python fatal stderr block omitted]\n", cleaned)
+def _detect_failure_reason(log_text: str) -> str | None:
+    """Detect whether the run likely exited due to an exception."""
+    if "Traceback (most recent call last):" in log_text:
+        if "KeyboardInterrupt" in log_text:
+            return "KeyboardInterrupt"
+        return "Python exception"
+    if "lost sys.stderr" in log_text:
+        return "Python fatal stderr"
+    return None
 
 
 def _list_run_logs(log_dir: Path) -> list[Path]:
@@ -498,8 +514,17 @@ def render(root: Path) -> None:
             pid = -1
         is_running = _is_pid_running(pid)
         if not is_running and run_state.get("finished_at") is None:
+            failure_reason = None
+            try:
+                state_log = Path(str(run_state.get("log_path", "")))
+                raw_log = _clean_terminal_output(_read_log_for_metrics(state_log))
+                failure_reason = _detect_failure_reason(raw_log)
+            except Exception:
+                failure_reason = None
             run_state["finished_at"] = time.time()
-            run_state["terminal_status"] = "finished"
+            run_state["terminal_status"] = "failed" if failure_reason else "finished"
+            if failure_reason and not bool(run_state.get("stop_requested", False)):
+                run_state["failure_reason"] = failure_reason
             st.session_state[RUN_STATE_KEY] = run_state
         if (
             not is_running
@@ -508,6 +533,9 @@ def render(root: Path) -> None:
         ):
             if bool(run_state.get("stop_requested", False)):
                 st.warning("Live run stopped.")
+            elif str(run_state.get("terminal_status", "")).lower() == "failed":
+                reason = str(run_state.get("failure_reason", "unknown error"))
+                st.error(f"Live run failed ({reason}). Check traceback in the log panel.")
             else:
                 st.success("Live run finished.")
             st.toast("Run status updated", icon="✅")
@@ -558,6 +586,8 @@ def render(root: Path) -> None:
         terminal_status = str(run_state.get("terminal_status", "")).lower()
         if terminal_status == "stopped":
             status = "Stopped"
+        elif terminal_status == "failed":
+            status = "Failed"
         elif terminal_status == "finished" or (not running_now and run_state.get("finished_at") is not None):
             status = "Finished"
         else:
@@ -602,7 +632,6 @@ def render(root: Path) -> None:
         key="std_live_log_tail_lines",
     )
     log_text = _clean_terminal_output(_read_log_tail(selected, max_lines=int(tail_lines)))
-    log_text = _clean_interruption_noise(log_text)
     st.code(log_text, language="text")
 
     auto_refresh = st.checkbox(
