@@ -31,6 +31,28 @@ ENV_RUNTIME_MARKER_KEYS = frozenset({"ACTIVE_LLM_KEY_SOURCE"})
 get_llm = llm_module.get_llm
 
 
+def _set_flash_message(level: str, message: str) -> None:
+    st.session_state["setup_flash_message"] = {"level": level, "message": message}
+
+
+def _render_flash_message() -> None:
+    payload = st.session_state.pop("setup_flash_message", None)
+    if not isinstance(payload, dict):
+        return
+    level = str(payload.get("level", "info")).strip().lower()
+    message = str(payload.get("message", "")).strip()
+    if not message:
+        return
+    if level == "success":
+        st.success(message)
+    elif level == "error":
+        st.error(message)
+    elif level == "warning":
+        st.warning(message)
+    else:
+        st.info(message)
+
+
 def _clear_llm_cache_safe() -> None:
     """Clear LLM cache across old/new module layouts without import-time breakage."""
     clear_fn = getattr(llm_module, "clear_llm_cache", None)
@@ -161,6 +183,7 @@ def render() -> None:
     st.info(
         "Use testnet keys where possible. For exchange keys, keep trading-only permission and disable withdrawal."
     )
+    _render_flash_message()
 
     env_values = _read_env(ENV_PATH)
     model_cfg = _load_model_config(CONFIG_PATH)
@@ -206,7 +229,10 @@ def render() -> None:
                     }
                     _write_env_updates(ENV_PATH, blob)
                     _apply_process_env(blob)
-                    st.success(f"Saved exchange credentials to `{ENV_PATH}` and applied them to this process.")
+                    _set_flash_message(
+                        "success",
+                        f"Saved exchange credentials to `{ENV_PATH}` and applied them to this process.",
+                    )
                     st.rerun()
         with ex_col2:
             if st.button("Test exchange connectivity", use_container_width=True):
@@ -271,6 +297,16 @@ def render() -> None:
             key="setup_llm_runtime_key_source",
             help="Selected key value will be copied to the provider runtime key in `.env`.",
         )
+        selected_source_value = env_values.get(selected_source_key, "").strip() if key_source_options else ""
+        if llm_env_key and key_source_options:
+            st.caption(
+                f"Runtime target: `{llm_env_key}` <= `{selected_source_key}` "
+                f"(preview: `{_mask_secret(selected_source_value)}`)"
+            )
+            if not selected_source_value:
+                st.warning("Selected runtime key source is empty. Fill that key first, then apply.")
+        elif not llm_env_key:
+            st.caption("Provider `ollama` does not require runtime API-key mapping.")
         llm_col1, llm_col2, llm_col3 = st.columns(3)
         with llm_col1:
             if st.button("Save LLM key", use_container_width=True):
@@ -283,17 +319,19 @@ def render() -> None:
                     _write_env_updates(ENV_PATH, blob)
                     _apply_process_env(blob)
                     _clear_llm_cache_safe()
-                    st.success(
+                    _set_flash_message(
+                        "success",
                         f"Saved {llm_env_key} to `{ENV_PATH}` and applied it to this process (overrides shell for this app)."
                     )
                     st.rerun()
         with llm_col2:
-            if st.button("Apply runtime LLM selection", use_container_width=True):
+            disable_apply_runtime = not llm_env_key or not bool(key_source_options) or not bool(selected_source_value)
+            if st.button("Apply runtime LLM selection", use_container_width=True, disabled=disable_apply_runtime):
                 if not llm_env_key:
                     blob = {"ACTIVE_LLM_KEY_SOURCE": ""}
                     _write_env_updates(ENV_PATH, blob)
                     _apply_process_env(blob)
-                    st.success("Saved runtime key source marker for `ollama`.")
+                    _set_flash_message("success", "Saved runtime key source marker for `ollama`.")
                     st.rerun()
                 elif not key_source_options:
                     st.error("No API key candidates found. Add at least one `*_API_KEY` key first.")
@@ -310,7 +348,8 @@ def render() -> None:
                         _write_env_updates(ENV_PATH, blob)
                         _apply_process_env(blob)
                         _clear_llm_cache_safe()
-                        st.success(
+                        _set_flash_message(
+                            "success",
                             f"Runtime LLM updated: provider `{llm_provider}`, "
                             f"`{llm_env_key}` now follows `{source_key}` (also applied to this process)."
                         )
@@ -380,7 +419,9 @@ def render() -> None:
                 _apply_process_env({edit_target: edit_value})
                 if _touch_affects_llm({edit_target}):
                     _clear_llm_cache_safe()
-                st.success(f"Updated `{edit_target}` in `{ENV_PATH}` and applied it to this process.")
+                _set_flash_message(
+                    "success", f"Updated `{edit_target}` in `{ENV_PATH}` and applied it to this process."
+                )
                 st.rerun()
 
     with editor_col2:
@@ -406,7 +447,9 @@ def render() -> None:
                 _apply_process_env({new_key_name: new_key_value})
                 if _touch_affects_llm({new_key_name}):
                     _clear_llm_cache_safe()
-                st.success(f"Added/updated `{new_key_name}` in `{ENV_PATH}` and applied it to this process.")
+                _set_flash_message(
+                    "success", f"Added/updated `{new_key_name}` in `{ENV_PATH}` and applied it to this process."
+                )
                 st.rerun()
 
     with editor_col3:
@@ -422,11 +465,16 @@ def render() -> None:
             _pop_process_env(dt)
             if _touch_affects_llm(dt):
                 _clear_llm_cache_safe()
-            st.success(f"Deleted {len(delete_targets)} key(s) from `{ENV_PATH}` and removed them from this process.")
+            _set_flash_message(
+                "success",
+                f"Deleted {len(delete_targets)} key(s) from `{ENV_PATH}` and removed them from this process.",
+            )
             st.rerun()
 
     env_values = _read_env(ENV_PATH)
-    active_source_key = env_values.get("ACTIVE_LLM_KEY_SOURCE", "").strip()
+    active_source_key = env_values.get("ACTIVE_LLM_KEY_SOURCE", "").strip() or (
+        os.getenv("ACTIVE_LLM_KEY_SOURCE", "").strip()
+    )
 
     def _preview_row(k: str) -> dict[str, str]:
         return {"key": k, "preview": _mask_secret(env_values.get(k, ""))}
@@ -458,12 +506,7 @@ def render() -> None:
         unsafe_allow_html=True,
     )
     st.caption("This is a non-secret marker: which key name the UI last applied for runtime.")
-    st.text_input(
-        "ACTIVE_LLM_KEY_SOURCE",
-        value=active_source_key or "(not set)",
-        disabled=True,
-        key="setup_active_llm_key_source_display",
-    )
+    st.markdown(f"`ACTIVE_LLM_KEY_SOURCE`: `{active_source_key or '(not set)'}`")
 
     st.markdown(
         '<div class="viz-panel-title"><span></span><span>LLM API keys (from local .env)</span></div>',
