@@ -718,6 +718,7 @@ See [LICENSE](LICENSE) file for full license text and attribution details.
 ## Contributors
 
 - [Shi Qian](https://github.com/hmit0506) - Project lead and initial implementation
+- [Gong Yiqi](https://github.com/chloeyiqigong) - Project collaborator
 - FYP25019 Team - Development team
 
 ## Acknowledgments

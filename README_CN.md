@@ -679,6 +679,7 @@ MIT许可证
 ## 贡献者
 
 - [Shi Qian](https://github.com/hmit0506) - 项目负责人和初始实现
+- [Gong Yiqi](https://github.com/chloeyiqigong) - 项目协作者
 - FYP25019 团队 - 开发团队
 
 ## 致谢
