@@ -88,7 +88,8 @@ def render(backtest_dir: Path) -> None:
             k3.metric("Sharpe (approx.)", f"{sharpe:+.2f}" if sharpe is not None else "—")
             k4.metric("Max drawdown", f"{mdd:.2f}%" if mdd is not None else "—")
             st.caption(
-                "Sharpe uses bar-to-bar returns scaled by √252; if your backtest step is not ~daily, treat it as indicative only."
+                "Sharpe here is recomputed from this chart's value series (√252 heuristic). "
+                "The backtest engine / exported CSV use √365 on the same run—compare numbers before drawing conclusions."
             )
             st.plotly_chart(_plotly_equity(plot_df, chart_timezone=chart_tz), use_container_width=True)
             with st.expander("Performance table preview"):
