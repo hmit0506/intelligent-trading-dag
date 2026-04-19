@@ -73,6 +73,3 @@ docs/
 .vscode/
 .idea/
 *.code-workspace
-
-# LaTeX draft (local thesis; not tracked on GitHub)
-latex_draft_temp/
