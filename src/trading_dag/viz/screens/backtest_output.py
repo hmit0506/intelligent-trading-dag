@@ -85,11 +85,12 @@ def render(backtest_dir: Path) -> None:
                 _format_compact_currency(pnl),
                 help=f"Exact value: ${pnl:,.2f}" if pnl is not None else None,
             )
-            k3.metric("Sharpe (approx.)", f"{sharpe:+.2f}" if sharpe is not None else "—")
+            k3.metric("Sharpe ratio", f"{sharpe:+.2f}" if sharpe is not None else "—")
             k4.metric("Max drawdown", f"{mdd:.2f}%" if mdd is not None else "—")
             st.caption(
-                "Sharpe here is recomputed from this chart's value series (√252 heuristic). "
-                "The backtest engine / exported CSV use √365 on the same run—compare numbers before drawing conclusions."
+                "Headline KPIs use the same formulas as benchmark exports (build_equity_metrics: "
+                "√365 annualization and per-bar risk-free spread), so they match the CLI when "
+                "this CSV is the same series the engine wrote."
             )
             st.plotly_chart(_plotly_equity(plot_df, chart_timezone=chart_tz), use_container_width=True)
             with st.expander("Performance table preview"):

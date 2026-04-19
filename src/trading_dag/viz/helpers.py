@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 import yaml
 
+from trading_dag.benchmark.equity_metrics import build_equity_metrics
 from trading_dag.viz.constants import SESSION_EMERGENCY_KILL_ALL_TS_KEY
 
 
@@ -217,28 +218,24 @@ def _read_standard_backtest_perf_for_plot(path: Path) -> Optional[pd.DataFrame]:
 
 def _kpis_from_value_series(values: pd.Series) -> tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
     """
-    From a chronological portfolio value series: total return %, dollar PnL, Sharpe (daily-ish approx), max DD %.
+    Total return %, dollar PnL, Sharpe, and max drawdown % from a chronological portfolio value series.
+
+    Uses ``build_equity_metrics`` (365-day annualizer and per-bar risk-free spread) so the Streamlit
+    headline strip matches benchmark exports and the backtest engine's bar-return definitions.
     """
     s = pd.to_numeric(values, errors="coerce").dropna()
     if len(s) < 2:
         return None, None, None, None
     initial = float(s.iloc[0])
-    final = float(s.iloc[-1])
     if abs(initial) < 1e-12:
         return None, None, None, None
-    total_return_pct = (final - initial) / initial * 100.0
-    pnl = final - initial
-    rolling_max = s.cummax()
-    denom = rolling_max.clip(lower=1e-12)
-    dd = (s - rolling_max) / denom
-    max_dd_pct = float(dd.min() * 100.0)
-    daily_ret = s.pct_change().dropna()
-    sharpe = None
-    if len(daily_ret) > 1:
-        std = float(daily_ret.std())
-        if std > 1e-12:
-            sharpe = float(daily_ret.mean() / std) * (252.0**0.5)
-    return total_return_pct, pnl, sharpe, max_dd_pct
+    equity_curve = pd.DataFrame({"portfolio_value": s.reset_index(drop=True)})
+    m = build_equity_metrics(equity_curve)
+    tr = float(m["total_return_pct"])
+    pnl = float(m["final_portfolio_value"] - m["initial_portfolio_value"])
+    sharpe = float(m["sharpe_ratio"])
+    mdd = float(m["max_drawdown_pct"])
+    return tr, pnl, sharpe, mdd
 
 
 def _read_equity_df(path: Path) -> Optional[pd.DataFrame]:

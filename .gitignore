@@ -74,18 +74,5 @@ docs/
 .idea/
 *.code-workspace
 
-# LaTeX draft build artifacts (latex_draft_temp/)
-latex_draft_temp/*.aux
-latex_draft_temp/*.log
-latex_draft_temp/*.out
-latex_draft_temp/*.toc
-latex_draft_temp/*.lof
-latex_draft_temp/*.lot
-latex_draft_temp/*.fls
-latex_draft_temp/*.fdb_latexmk
-latex_draft_temp/*.synctex.gz
-latex_draft_temp/*.bbl
-latex_draft_temp/*.blg
-latex_draft_temp/*.bcf
-latex_draft_temp/*.run.xml
-
+# LaTeX draft (local thesis; not tracked on GitHub)
+latex_draft_temp/

@@ -341,7 +341,7 @@ backtest/benchmark 的运行状态持久化到磁盘，刷新后可恢复。**St
 - **FullDAG** — 使用配置中的完整 `strategies`（如 MACD + RSI + Bollinger）。各策略节点仍汇入既有风控与组合节点，与日常回测拓扑一致。
 - **单策略变体** — 工作流中仍包含风控与组合层，但**仅注册一个**策略类。检验的是：在同一执行与决策外壳下，**单一指标族**相对**多源融合**的表现，而不是把指标拆到完全独立脚本里跑。
 
-**指标与产物。** 每条权益曲线来自回测器组合价值序列；`equity_metrics.build_equity_metrics` 计算收益、Sharpe、Sortino、回撤、胜率等。汇总表按收益排序仅为速览；**正式报告**中仍应单独讨论显著性、成本敏感性、多窗口稳健性等（本 README 不替代统计小节）。
+**指标与产物。** 每条权益曲线来自回测器组合价值序列；`equity_metrics.build_equity_metrics` 计算收益、Sharpe、Sortino、回撤、胜率等。汇总表按收益排序仅为速览；**正式报告**中仍应单独讨论显著性、成本敏感性、多窗口稳健性等（本 README 不替代统计小节）。Streamlit **Standard backtest → Equity & KPIs** 页眉上的总收益、盈亏、Sharpe、最大回撤由 `viz.helpers._kpis_from_value_series` 调用同一 `build_equity_metrics` 计算，因此在选择同一次运行的 `backtest_performance_*.csv` 时，与 CLI / benchmark 的 $\sqrt{365}$ 年化及按 bar 摊开的无风险利率口径一致。
 
 **代码结构。** `phase1.py` 负责 Phase 1 编排；共享的 CSV 导出与图表在 `suite_common.py`。`phase1_registry.py` 定义实验名与策略列表；单次 DAG 回测通过 `dag_backtest_runner.run_dag_backtest_experiment`（Phase 1 使用默认完整管线）。结果类型见 `experiment_types.py`；历史模块名 `phase1_models` / `phase1_metrics` / `phase1_baselines` 仍为兼容重导出（`phase1_baselines` 现为无符号占位）。
 
